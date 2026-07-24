@@ -1,0 +1,4 @@
+interface:
+  display_name: "Plan Docs"
+  short_description: "先对齐需求，再生成可审查、可分工的 AI 执行文档树"
+  default_prompt: "Use $plan-docs to turn my project idea into a traceable planning tree before implementation."

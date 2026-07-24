@@ -1,0 +1,13 @@
+#!/bin/sh
+# PLAN_DOCS_OWNED v1
+zero=0000000000000000000000000000000000000000
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue
+  [ "$remote_sha" = "$zero" ] && continue
+  if ! git merge-base --is-ancestor "$remote_sha" "$local_sha"; then
+    echo "[plan-docs] push blocked: $remote_ref would be a non-fast-forward update." >&2
+    echo "Force push is forbidden by Plan Docs discipline." >&2
+    exit 1
+  fi
+done
+exit 0

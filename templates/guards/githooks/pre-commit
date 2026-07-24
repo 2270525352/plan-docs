@@ -1,0 +1,3 @@
+#!/bin/sh
+# PLAN_DOCS_OWNED v1
+exec python3 "$(git rev-parse --show-toplevel)/.plan-docs/hooks/pre_commit.py"

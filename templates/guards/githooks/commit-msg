@@ -1,0 +1,11 @@
+#!/bin/sh
+# PLAN_DOCS_OWNED v1
+first_line=$(head -n 1 "$1")
+case "$first_line" in
+  Merge*|Revert*|"fixup!"*|"squash!"*) exit 0 ;;
+esac
+if printf '%s' "$first_line" | grep -Eq '^[^ ]+ \((Claude|Codex|OpenCode|Reviewer-Claude|CCB|Single-AI)\): .+'; then
+  exit 0
+fi
+echo "[plan-docs] commit blocked: use <task_id> (<AI>): <summary>" >&2
+exit 1

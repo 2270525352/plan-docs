@@ -1,0 +1,25 @@
+{
+  "task_id": "",
+  "phase": "planning",
+  "owner": "",
+  "coordinator": "",
+  "merge_authority": "",
+  "allowed_scope": [],
+  "forbidden_scope": [],
+  "protected_append_only": [
+    "docs/plan-docs/00-source/用户原话.md",
+    "docs/用户原话.md"
+  ],
+  "allow_user_words_append": false,
+  "write_lock": [],
+  "shared_interfaces": [],
+  "input_contracts": [],
+  "output_contracts": [],
+  "merge_order": "",
+  "conflict_resolution": "",
+  "verification_commands": [],
+  "test_commands": [],
+  "feedback_record": "",
+  "stop_conditions": "",
+  "updated_at": ""
+}
