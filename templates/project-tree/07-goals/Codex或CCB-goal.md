@@ -16,8 +16,11 @@ capability_evidence: <F-*>
 
 先读 AGENTS.md、CURRENT_STATE.md、用户原话、AI 可读需求、产品索引、架构/接口、总任务、Codex任务文档、执行反馈和自动模式门禁。
 只领取 owner=Codex 且依赖满足的任务。
+选定一个任务后、任何写入前，必须用该任务在 Codex 任务文档中的原样合同激活唯一运行态：
+python3 <PLAN_DOCS_SKILL_DIR>/scripts/plan-docs-activate-task.py --project <PROJECT_ROOT> --task-doc <PROJECT_ROOT>/docs/plan-docs/04-tasks/Codex任务文档.md --task-id <TASK_ID>
+确认 current-task.json 的 task_id、范围、写锁和合同字段与所选任务一致；同一 worktree 同时只能激活一个任务。
 禁止无依据硬编码、另起接口、扩展 allowed_scope 或修改 forbidden_scope。
-多任务并行前验证文件不重叠、接口不共写、依赖满足、I/O 契约一致、写锁唯一、合并顺序明确。
+多任务并行只能使用彼此隔离的 worktree；每个 worktree 分别激活一个任务。并行前验证文件不重叠、接口不共写、依赖满足、I/O 契约一致、写锁唯一、合并顺序明确。
 每个任务执行：锁定 → git status → exact_steps → verify/test → 反馈 → 对齐 diff → checkpoint → 更新 CURRENT_STATE。
 发现 RED、锁/接口冲突、需求缺口、测试失败或 stop_conditions 时停止并报告，不猜测推进。
 

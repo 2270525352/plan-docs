@@ -21,11 +21,14 @@ AGENTS.md → CURRENT_STATE.md → docs/plan-docs/00-source/用户原话.md
 → 06-reviews/自动模式门禁.md
 
 仅领取 owner=Claude、status=ready、dependencies 已满足的任务。
+选定一个任务后、任何写入前，必须用该任务在 Claude 任务文档中的原样合同激活唯一运行态：
+python3 <PLAN_DOCS_SKILL_DIR>/scripts/plan-docs-activate-task.py --project <PROJECT_ROOT> --task-doc <PROJECT_ROOT>/docs/plan-docs/04-tasks/Claude任务文档.md --task-id <TASK_ID>
+确认 current-task.json 的 task_id、范围、写锁和合同字段与所选任务一致；同一 worktree 同时只能激活一个任务。
 每次只在 allowed_scope 和 write_lock 内写入；不得修改 forbidden_scope、用户原话、未授权需求、页面/交互、prompt 或共享接口。
 开始前更新 CURRENT_STATE 并运行 git status。
 按 exact_steps 执行；运行全部 verification_commands 和 test_commands。
 追加 feedback_record，检查 source_user_words/requirement_ids 对齐，再按 Git 策略 checkpoint 并更新 CURRENT_STATE。
-并行任务只在文件、接口、依赖和写锁检查全部 PASS 时分发。
+并行写任务只在各自使用独立 worktree，且文件、接口、依赖和写锁检查全部 PASS 时分发。
 遇到锁冲突、未确认需求、接口变更、验证失败、RED 或 stop_conditions 时立即停止并记录 blocker。
 
 完成条件：

@@ -39,7 +39,7 @@
 
 ### CCB 多 AI
 
-检测实际 CCB 能力后，把边界完整的任务合同分发给 Claude、Codex 或 OpenCode。互不重叠的任务可以并行，但必须有协调者、最终合并权威、文件锁和共享接口约束。
+检测实际 CCB 能力后，把边界完整的任务合同分发给 Claude、Codex 或 OpenCode。互不重叠的任务可以并行，但每个并行写任务必须使用独立 worktree，并有协调者、最终合并权威、文件锁和共享接口约束。
 
 ### 无 CCB 的多窗口
 
@@ -79,7 +79,7 @@ docs/plan-docs/
   10-guards/
 ```
 
-任务至少包含 `task_id`、owner、原话/需求来源、依赖、允许/禁止范围、共享接口读写模式、输入/输出合同、合并/冲突策略、精确步骤、输出、验收、验证/测试命令、写锁、Git checkpoint、反馈和停止条件。总任务与各 AI 文档逐字段一致；没有分配任务的角色必须显式写 `assignment_status: none` 及原因。
+任务至少包含 `task_id`、owner、原话/需求来源、依赖、允许/禁止范围、共享接口读写模式、输入/输出合同、合并/冲突策略、精确步骤、输出、验收、验证/测试命令、写锁、Git checkpoint、反馈和停止条件。所有 `CONTRACT-*` 在任务合同注册表中定义实际制品、结构、生产/消费方和验证；总任务与各 AI 文档逐字段一致；没有分配任务的角色必须显式写 `assignment_status: none` 及原因。
 
 完整追踪链：
 
@@ -99,7 +99,16 @@ docs/plan-docs/
 5. AI 职责边界；
 6. 测试、Git、反馈、自动化和停止条件。
 
+审查使用 `pending → active → submitted → immutable` 状态机。每位 Reviewer 启动前必须
+在分发表与 `CURRENT_STATE.md` 获得唯一精确报告锁；报告提交后由协调者记录 hash/bytes，
+原始报告不可回写。六份报告还绑定不同的外部 run/thread ID、dispatch nonce 和同一份
+planning source snapshot。污染上下文、缺锁或复用已有路径都不能成为门禁通过证据；平台
+不给可信外部执行证明时，文档会明确降级为内部来源证据。
+
 只有无 RED、无未处理 P0/P1 YELLOW、所有需求和任务都有完整追踪与验收、没有写入冲突且用户确认最终规划/分工后，门禁才为 READY。
+
+最终批准不是任意 `yes`：它必须是最新 `U-*` 的精确引文，明确写出被批准的完整 Git
+checkpoint。审计还验证 commit、规划 snapshot、干净工作树和最终护栏状态。
 
 ## `/goal` 与普通提示词
 
@@ -144,6 +153,16 @@ python3 <skill-dir>/scripts/plan-docs-bootstrap.py install --project <project> -
 
 `--init-tree` 不创建最终 `/goal` 和自动化提示词；它们要等门禁通过。
 
+用户原话模板不预建占位记录。每条消息用原子追加脚本写入，避免首次提交覆写窗口：
+
+```bash
+python3 <skill-dir>/scripts/plan-docs-append-user-words.py \
+  --project <project> \
+  --source "user message" \
+  --context "requirements interview" \
+  --verbatim-file <exact-message-file>
+```
+
 执行前用任务文档激活运行态，避免手工把字段抄错：
 
 ```bash
@@ -153,11 +172,17 @@ python3 <skill-dir>/scripts/plan-docs-activate-task.py \
   --task-id TASK-001
 ```
 
+激活只接受项目内规范 AI 任务文档，逐字段比对总任务，并要求 gate-ready 审计通过；只有
+访谈期规范 `intake` 任务可取得原话追加权限。同一 worktree 只允许一个激活任务；并行
+写任务必须使用各自独立的 worktree。
+
 门禁和最终提示词分两步审计，避免用尚未允许生成的提示词反过来证明门禁：
 
 ```bash
 python3 <skill-dir>/scripts/plan-docs-audit.py --project <project> --require-gate-ready
 # 门禁通过后生成 07-goals/ 与 08-automation/
+python3 <skill-dir>/scripts/plan-docs-guards.py install --project <project>
+python3 <skill-dir>/scripts/plan-docs-guards.py verify --project <project>
 python3 <skill-dir>/scripts/plan-docs-audit.py --project <project> --require-final-artifacts
 ```
 
@@ -184,6 +209,9 @@ python3 /path/to/skill-creator/scripts/quick_validate.py .
 python3 -m unittest discover -s tests -v
 python3 scripts/check-markdown-links.py .
 ```
+
+真实新项目、旧项目和大型多角色项目的结果见
+[`tests/FORWARD_TESTS.md`](tests/FORWARD_TESTS.md)。
 
 ## License
 

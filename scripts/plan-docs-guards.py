@@ -9,6 +9,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import stat
 import subprocess
@@ -333,6 +334,40 @@ def effective_hooks_directory(project: Path, hooks_path: str) -> Path | None:
     return directory if directory.is_absolute() else project / directory
 
 
+def hook_line_tokens(line: str) -> list[str]:
+    lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|")
+    lexer.whitespace_split = True
+    lexer.commenters = "#"
+    return list(lexer)
+
+
+def line_invokes_chained_hook(line: str, expected: str) -> bool:
+    """Accept only a simple command whose executable position is the guard hook."""
+    try:
+        tokens = hook_line_tokens(line)
+    except ValueError:
+        return False
+    if not tokens or any(token in {";", "&&", "||", "|", "&"} for token in tokens):
+        return False
+
+    while tokens and "=" in tokens[0]:
+        name, _, _ = tokens[0].partition("=")
+        if not name.isidentifier():
+            break
+        tokens.pop(0)
+    while tokens and tokens[0] in {"exec", "command"}:
+        tokens.pop(0)
+    if tokens and Path(tokens[0]).name == "env":
+        tokens.pop(0)
+        while tokens and (tokens[0].startswith("-") or "=" in tokens[0]):
+            tokens.pop(0)
+    if tokens and Path(tokens[0]).name in {"sh", "bash", "zsh", "dash"}:
+        tokens.pop(0)
+        while tokens and tokens[0].startswith("-"):
+            tokens.pop(0)
+    return bool(tokens and tokens[0].replace("\\", "/").endswith(expected))
+
+
 def chained_hooks_verified(project: Path, hooks_path: str) -> list[str]:
     directory = effective_hooks_directory(project, hooks_path)
     if directory is None:
@@ -347,12 +382,24 @@ def chained_hooks_verified(project: Path, hooks_path: str) -> list[str]:
             errors.append(f"existing chained hook is not executable: {hook}")
         text = hook.read_text(encoding="utf-8", errors="ignore")
         expected = f".plan-docs/git-hooks/{name}"
-        visible_calls = [
-            line for line in text.splitlines()
-            if expected in line and not line.lstrip().startswith("#")
-        ]
-        if not visible_calls:
-            errors.append(f"{hook} does not visibly chain {expected}")
+        invoked = False
+        terminated = False
+        for line in text.splitlines():
+            try:
+                tokens = hook_line_tokens(line)
+            except ValueError:
+                continue
+            if not tokens:
+                continue
+            if not terminated and line_invokes_chained_hook(line, expected):
+                invoked = True
+                break
+            if tokens[0] in {"exit", "return"} or any(
+                token in {"exit", "return"} for token in tokens[1:]
+            ):
+                terminated = True
+        if not invoked:
+            errors.append(f"{hook} does not execute {expected} as a reachable command")
     return errors
 
 

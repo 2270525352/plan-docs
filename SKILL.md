@@ -12,7 +12,7 @@ description: 在项目开发前把用户的原始想法收敛为需求对齐、�
 1. 把用户原话视为最高级需求锚点。目标项目的 `docs/plan-docs/00-source/用户原话.md` 只保存用户原话和稳定记录编号 `U-001`、`U-002`……；严格追加，不改写、总结、润色、翻译、删除或重排。把 AI 推断、查证和解释写入 `AI推断与事实查证.md`。
 2. 在需求、任务、AI 分工和用户确认完成前，不写实现代码，不启用自动执行，不生成最终执行提示词。
 3. 先生成 `总任务文档.md`，再从中拆出各 AI 任务文档。每个子任务必须回溯到总任务、需求和原话。
-4. 允许多个 AI 并行处理互不重叠的任务，但必须有一个协调者和最终合并权威。同一最终文件同一时间只能有一个写入者。
+4. 允许多个 AI 并行处理互不重叠的任务，但每个并行写任务必须使用独立 worktree，并有一个协调者和最终合并权威。同一 worktree 只有一个激活任务，同一最终文件同一时间只有一个写入者。
 5. Reviewer 使用独立干净上下文，只报告，不静默修复；不得同时实现被其审查的任务。
 6. 不凭空断言某个工具支持 `/goal`、定时任务、子代理或特定 hook。检测本地能力或查阅当前官方资料；无法确认时生成普通提示词。
 7. 保护已有代码、文档、Git 改动、hooks、Claude settings 和 `AGENTS.md`。不 force push，不用无依据硬编码补需求。
@@ -27,7 +27,7 @@ description: 在项目开发前把用户的原始想法收敛为需求对齐、�
    python3 <skill-dir>/scripts/plan-docs-bootstrap.py install --project <target-project>
    ```
 
-4. 每个新窗口按顺序读取：项目根 `AGENTS.md` → `CURRENT_STATE.md` → 用户原话 → AI 可读需求 → 产品索引/架构 → 总任务 → 当前 AI 任务 → 执行反馈。
+4. 每个普通规划/执行窗口按顺序读取：项目根 `AGENTS.md` → `CURRENT_STATE.md` → 用户原话 → AI 可读需求 → 产品索引/架构 → 总任务 → 当前 AI 任务 → 执行反馈。独立 Reviewer 是例外：不得读取含历史审查结论的完整状态，只读 `CURRENT_STATE.md` 中从 `## Current snapshot` 到下一个二级标题前的有界快照、分发表中自己的单行和被分配的业务文档。
 5. 按当前阶段读取对应 SOP；不要一次加载全部 references：
 
    - 访谈、原话、阶段门禁：[references/01-规划工作流.md](references/01-规划工作流.md)
@@ -53,9 +53,18 @@ description: 在项目开发前把用户的原始想法收敛为需求对齐、�
 
 给出默认推荐，但必须由用户确认或修改。信息尚未确认时可以继续访谈和草拟规划，不得正式分配执行任务或进入自动模式。
 
+用户回复环境、分工或需求问题后，必须先完成“回复落盘检查点”，再扩展下游文档：
+
+1. 把完整回复逐字追加为新的 `U-*`；
+2. 立即把已确认值同步到 `环境与分工确认.md`，将 `confirmed_by_user` 和时间改为真实值；
+3. `available_ais` 只能使用 `Claude`、`Codex`、`OpenCode`、`single-ai-cli` 这些稳定枚举，版本号和检测细节写入 `F-*`；
+4. 更新 `开放问题.md`、`CURRENT_STATE.md` 与追踪矩阵；
+5. 重读本轮用户原话，列出仍未同步的决定；清零后才进入下一阶段。
+
 ## 阶段 1：留存原话并做 PM 访谈
 
-1. 把每条需求、决定、修正和偏好逐字追加为稳定 `U-*` 记录。
+1. 用 `scripts/plan-docs-append-user-words.py` 把每条需求、决定、修正和偏好逐字追加为
+   稳定 `U-*` 记录；空树不预建占位 `U-001`。
 2. 站在产品经理角度讨论目标用户、真实场景、价值、边界、优先级、失败形态和可验收结果。
 3. 把歧义、冲突和待确认事项写入 `01-requirements/开放问题.md`；不要把默认猜测伪装成确认需求。
 4. 获得用户明确确认后再冻结当前需求基线。
@@ -98,6 +107,10 @@ docs/plan-docs/
 - `Reviewer（Claude）任务文档.md`
 - 用户选择 OpenCode 时才创建 `OpenCode任务文档.md`
 
+所有 `input_contracts` / `output_contracts` 先在 `任务合同注册表.md` 定义唯一
+`CONTRACT-*`：生产者、消费者、实际制品、必需内容、完成条件、验证、兼容性和冻结状态。
+只有名字而没有定义的合同不允许通过门禁。
+
 每个可执行任务至少包含这些稳定字段：
 
 ```text
@@ -129,8 +142,14 @@ status
 
 把任务拆成单一动作、可独立验证的原子单元。需要时细到一个字段、一次交互或一条 debug 语句。禁止把互不依赖的多个动作塞进同一任务。
 
+拆分完成后立即做一次闭环检查：每个已确认 `REQ-*` 都有实际存在的 `TASK-*` 与
+`TEST-*`，总任务逐字段复制到且仅复制到一个 AI 文档；然后运行 gate-ready 审计并只把
+“尚未执行六代理审查/最终用户批准”保留为预期阻塞。若还出现环境、追踪、任务合同或冲突
+错误，先修正这些规划文档，不继续扩展细节，也不生成最终提示词。
+
 并行前检查：
 
+- 每个写任务使用独立 worktree，分别激活自己的唯一 `current-task.json`；
 - 两个任务不写同一文件；
 - 不同时修改同一接口或 schema；
 - 依赖方向一致；
@@ -154,6 +173,21 @@ status
 
 平台不支持六个并发代理时，使用六次互不共享结论的新上下文。代理只写报告。协调者汇总、修订相关文档，再重新审查。
 
+每次分发必须遵循 `审查分发与写锁.md` 的状态机：协调者先在该表和
+`CURRENT_STATE.md` 激活唯一精确 raw 报告锁，然后停止写；Reviewer 验证锁后只写自己的
+报告，返回 `submitted` 并退出；协调者再执行仅限锁交接的控制面转换，记录报告
+SHA-256/bytes、标为 `immutable`，然后激活下一位。路径已存在、锁不匹配或上下文降级时
+不得计入通过证据，重试必须使用新 round/path。
+
+每次分发还要记录外部调度器返回的唯一 run/thread ID、随机 dispatch nonce 和统一的
+planning source snapshot SHA-256，并由 raw 报告逐字段回传。离线审计会复算 snapshot、
+报告 hash/bytes 和唯一性；若平台不给可验证的外部执行证明，只能把独立性标为“内部来源
+证据”，不得声称获得了不可伪造的调度器证明。
+
+Reviewer 的 preflight 只能提取 `CURRENT_STATE.md` 的有界 `Current snapshot`（遇到下一个
+`##` 立即停止）和分发表中自己的单行；禁止整页读取状态日志、旧报告摘要或其他 Reviewer
+行。若工具误读了这些内容，必须声明污染、停止且零写入。
+
 ## 阶段 5：自动模式门禁
 
 只有同时满足以下条件才把 `06-reviews/自动模式门禁.md` 标记为 `READY`：
@@ -166,6 +200,11 @@ status
 - 环境、分工、Git 策略和协调者已由用户确认；
 - 用户确认最终规划与分工；
 - 根协调文件、执行反馈和护栏策略已就绪。
+
+最终确认必须再追加成 `U-*`，且原话明确写出被批准的 40 位 Git checkpoint；门禁记录该
+ID、含 checkpoint 的精确确认片段和批准时间。`auto`/`confirm` 策略要求 checkpoint 真实存在、是当前 HEAD 的祖先、
+规划 source snapshot 未变化且工作树干净；`disabled` 只有在另一个精确 U-* 片段明确接受
+无 Git 降级时才可继续。
 
 任一条件失败时写明证据与阻塞项，保持 `BLOCKED`，不得生成最终执行提示词。
 
@@ -191,19 +230,14 @@ python3 <skill-dir>/scripts/plan-docs-audit.py \
 
 再生成 Codex App 定时审查提示词和启用说明。默认每 30 分钟；只检测并报告 GREEN/YELLOW/RED，不自动改代码或原话。不要静默创建自动化。
 
-生成完成后运行最终产物审计：
-
-```bash
-python3 <skill-dir>/scripts/plan-docs-audit.py \
-  --project <target-project> \
-  --require-final-artifacts
-```
-
-需要可执行护栏时运行：
+生成完成后安装并验证可执行护栏，再运行最终产物审计：
 
 ```bash
 python3 <skill-dir>/scripts/plan-docs-guards.py install --project <target-project>
 python3 <skill-dir>/scripts/plan-docs-guards.py verify --project <target-project>
+python3 <skill-dir>/scripts/plan-docs-audit.py \
+  --project <target-project> \
+  --require-final-artifacts
 ```
 
 已有 hook manager 时不覆盖；按脚本报告进行显式串联或保留为待办。
@@ -221,6 +255,11 @@ python3 <skill-dir>/scripts/plan-docs-guards.py verify --project <target-project
      --task-doc docs/plan-docs/04-tasks/<AI任务文档>.md \
      --task-id <TASK-ID>
    ```
+
+   激活脚本只接受项目内规范 AI 任务文档，逐字段比对总任务，并重新运行 gate-ready 审计；
+   外部任务文件、漂移副本和未过门禁的执行任务都会被拒绝。需求访谈期只有规范 `intake`
+   任务可启用 append 权限。同一 worktree 只保存一个激活任务；并行写任务必须各自使用
+   独立 worktree。
 
 3. 把负责人、当前任务和写锁同步到 `CURRENT_STATE.md`，再运行 `git status`；
 4. 只在 `allowed_scope` 内执行；

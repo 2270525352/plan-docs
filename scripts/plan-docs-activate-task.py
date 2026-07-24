@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -79,6 +80,13 @@ REQUIRED_NONEMPTY = {
     "status",
 }
 CURRENT_TASK = Path("docs/plan-docs/05-execution/current-task.json")
+TOTAL_TASKS = Path("docs/plan-docs/04-tasks/总任务文档.md")
+SUPPORTED_TASK_DOCUMENTS = {
+    "Claude任务文档.md",
+    "Codex任务文档.md",
+    "Reviewer（Claude）任务文档.md",
+    "OpenCode任务文档.md",
+}
 
 
 class ActivationError(RuntimeError):
@@ -172,6 +180,16 @@ def activate(
 ) -> int:
     project = project.resolve()
     document = task_document if task_document.is_absolute() else project / task_document
+    document = document.resolve()
+    task_directory = (project / "docs/plan-docs/04-tasks").resolve()
+    try:
+        document.relative_to(task_directory)
+    except ValueError as exc:
+        raise ActivationError("task document must be inside docs/plan-docs/04-tasks") from exc
+    if document.parent != task_directory or document.name not in SUPPORTED_TASK_DOCUMENTS:
+        raise ActivationError(
+            "task document must be a supported canonical AI task document"
+        )
     text = document.read_text(encoding="utf-8")
     task = parse_task(text, task_id)
     if task["status"] != "ready":
@@ -184,9 +202,22 @@ def activate(
         raise ActivationError(
             "task document must name coordinator and merge_authority before activation"
         )
+    total_path = project / TOTAL_TASKS
+    total_task = parse_task(total_path.read_text(encoding="utf-8"), task_id)
+    mismatched = [
+        field for field in FIELDS if task.get(field) != total_task.get(field)
+    ]
+    if mismatched:
+        raise ActivationError(
+            "AI task differs from 总任务文档.md: " + ", ".join(mismatched)
+        )
     allowed_scope = task["allowed_scope"]
     assert isinstance(allowed_scope, list)
     if allow_user_words_append:
+        if task["phase"] != "intake":
+            raise ActivationError(
+                "--allow-user-words-append is restricted to a canonical intake task"
+            )
         protected_paths = {
             "docs/plan-docs/00-source/用户原话.md",
             "docs/用户原话.md",
@@ -198,6 +229,30 @@ def activate(
             raise ActivationError(
                 "--allow-user-words-append requires the exact user-words path "
                 "in both allowed_scope and write_lock"
+            )
+        if set(allowed_scope) - protected_paths or set(write_lock) - protected_paths:
+            raise ActivationError(
+                "an intake append task may lock only an exact user-words path"
+            )
+    else:
+        audit_script = Path(__file__).with_name("plan-docs-audit.py")
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(audit_script),
+                "--project",
+                str(project),
+                "--require-gate-ready",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = result.stdout.strip() or result.stderr.strip()
+            raise ActivationError(
+                "automatic-mode gate is not ready; activation refused"
+                + (f": {detail}" if detail else "")
             )
     runtime = {
         "task_id": task_id,

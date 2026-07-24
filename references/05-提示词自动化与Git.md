@@ -55,14 +55,19 @@ Reviewer 使用独立上下文，对照：
 - 不 force push，不覆盖或删除用户历史；
 - 推送目标分支遵循用户与仓库规则，不在技能中固定禁止 main/master。
 
+门禁记录并验证完整 40 位 `reviewed_checkpoint`：commit 必须存在且是 HEAD 祖先，规划 source
+snapshot 必须与该 commit 一致，gate-ready 时工作树必须干净。最终提示词和护栏生成后，只
+允许 `07-goals/`、`08-automation/` 与 Plan Docs 自有护栏文件形成预期 post-checkpoint
+diff；其他变化重新阻断。`git_policy: disabled` 必须绑定到明确接受降级的 U-* 原话片段。
+
 ## 护栏
 
 `plan-docs-guards.py` 安装：
 
-- Claude 写入范围检查；
+- Claude `Edit`/`Write`/`Bash` 写入范围检查：识别常见 shell 重定向和写命令，只读 Bash 放行；动态目标、目录上下文变化、破坏性 Git 命令等无法可靠解析的高风险写法 fail-closed；
 - Claude 停止前执行反馈检查；
 - Git pre-commit 的用户原话 append-only、当前任务、反馈和测试门禁；
 - commit-msg 的任务 ID/AI 格式检查；
 - pre-push 的 force push 检测。
 
-护栏不是需求解释器。已有 hook manager 时脚本只安装自有文件并报告集成待办，不覆盖现有 hook。显式串联三类 hook 后，使用 `verify --allow-existing-hooks-path` 校验真实调用痕迹。`.claude/settings.json` 通过结构化 JSON 合并，卸载时只移除 Plan Docs 项。
+护栏不是需求解释器。实时 hook 对 `Edit`/`Write`/`Bash` 的内部错误也 fail-closed；Git pre-commit 仍是 staged diff 的第二道权威防线。已有 hook manager 时脚本只安装自有文件并报告集成待办，不覆盖现有 hook。显式串联三类 hook 后，使用 `verify --allow-existing-hooks-path` 校验真实调用痕迹。`.claude/settings.json` 通过结构化 JSON 合并，卸载时只移除 Plan Docs 项。

@@ -27,5 +27,8 @@ owner: OpenCode
 Git checkpoint：<policy>
 停止条件：<conditions>
 
+任何写入前先运行：
+python3 <PLAN_DOCS_SKILL_DIR>/scripts/plan-docs-activate-task.py --project <PROJECT_ROOT> --task-doc <PROJECT_ROOT>/docs/plan-docs/04-tasks/OpenCode任务文档.md --task-id <TASK_ID>
+确认 current-task.json 与本任务合同完全一致；同一 worktree 同时只能激活一个任务。
 不要改变需求、产品、架构或接口。完成后返回实际文件、命令结果、假设、阻塞和建议合并顺序。
 ```

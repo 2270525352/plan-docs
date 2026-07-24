@@ -5,8 +5,10 @@ from __future__ import annotations
 
 import argparse
 from fnmatch import fnmatchcase
+import hashlib
 from pathlib import Path
 import re
+import subprocess
 import sys
 
 
@@ -24,6 +26,7 @@ BASE_FILES = (
     "03-product/API文档.md",
     "03-product/测试用例.md",
     "04-tasks/总任务文档.md",
+    "04-tasks/任务合同注册表.md",
     "04-tasks/任务依赖与并行计划.md",
     "04-tasks/Claude任务文档.md",
     "04-tasks/Codex任务文档.md",
@@ -32,12 +35,16 @@ BASE_FILES = (
     "05-execution/执行反馈日志.md",
     "05-execution/current-task.json",
     "06-reviews/Codex App 六代理审查提示词.md",
+    "06-reviews/审查分发与写锁.md",
     "06-reviews/审查汇总.md",
     "06-reviews/自动模式门禁.md",
     "09-git/Git纪律.md",
     "10-guards/护栏说明.md",
 )
 FINAL_PROMPT_PLACEHOLDER = re.compile(r"<[^>\n]+>")
+USER_WORD_TEMPLATE_PLACEHOLDER = re.compile(
+    r"(?m)^\s*<逐字粘贴用户原话>\s*$"
+)
 TASK_FIELDS = (
     "task_id",
     "phase",
@@ -93,6 +100,20 @@ def task_blocks(text: str) -> list[tuple[str, str]]:
 
 def finding_blocks(text: str) -> list[tuple[str, str]]:
     matches = list(re.finditer(r"(?m)^#{2,6}\s+(REV-[A-Za-z0-9-]+)\s*$", text))
+    blocks: list[tuple[str, str]] = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        blocks.append((match.group(1), text[match.end() : end]))
+    return blocks
+
+
+def id_blocks(text: str, prefix: str) -> list[tuple[str, str]]:
+    matches = list(
+        re.finditer(
+            rf"(?m)^#{{2,6}}\s+({re.escape(prefix)}-[A-Za-z0-9-]+)\s*$",
+            text,
+        )
+    )
     blocks: list[tuple[str, str]] = []
     for index, match in enumerate(matches):
         end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
@@ -168,6 +189,241 @@ def tables(text: str) -> list[tuple[list[str], list[list[str]]]]:
 def scalar(text: str, field: str) -> str:
     match = re.search(rf"(?m)^{re.escape(field)}:[ \t]*(.*?)[ \t]*$", text)
     return match.group(1).strip() if match else ""
+
+
+def user_words_schema_is_strict(text: str) -> bool:
+    matches = list(re.finditer(r"(?m)^## (U-\d{3,})\s*$", text))
+    if not matches:
+        return text.strip() == "# 用户原话"
+    if text[: matches[0].start()].strip() != "# 用户原话":
+        return False
+    for index, match in enumerate(matches):
+        record_id = match.group(1)
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        block = text[match.end() : end]
+        record = re.fullmatch(
+            rf"\s*record_id:[ \t]*{re.escape(record_id)}[ \t]*\n"
+            r"\s*time:[ \t]*[^\n]+[ \t]*\n"
+            r"\s*source:[ \t]*[^\n]+[ \t]*\n"
+            r"\s*context:[ \t]*[^\n]+[ \t]*\n"
+            r"\s*verbatim:[ \t]*[|>][ \t]*\n"
+            r"(?P<verbatim>(?:[ \t]+[^\n]*(?:\n|$))+)\s*",
+            block,
+        )
+        if not record or not record.group("verbatim").strip():
+            return False
+    return True
+
+
+def review_source_paths(root: Path) -> list[Path]:
+    relative_files: list[Path] = [Path("AGENTS.md")]
+    tree = root / "docs/plan-docs"
+    for directory in (
+        "00-source",
+        "01-requirements",
+        "02-architecture",
+        "03-product",
+        "04-tasks",
+        "09-git",
+        "10-guards",
+    ):
+        base = tree / directory
+        if base.exists():
+            relative_files.extend(
+                path.relative_to(root)
+                for path in base.rglob("*")
+                if path.is_file() and not path.is_symlink()
+            )
+    relative_files.append(
+        Path("docs/plan-docs/05-execution/环境与分工确认.md")
+    )
+    return sorted(set(relative_files), key=lambda item: item.as_posix())
+
+
+def snapshot_digest(entries: list[tuple[Path, bytes]]) -> str:
+    digest = hashlib.sha256()
+    for relative, payload in entries:
+        name = relative.as_posix().encode("utf-8")
+        digest.update(len(name).to_bytes(8, "big"))
+        digest.update(name)
+        digest.update(len(payload).to_bytes(8, "big"))
+        digest.update(payload)
+    return digest.hexdigest()
+
+
+def without_user_records(payload: bytes, excluded: set[str]) -> bytes:
+    if not excluded:
+        return payload
+    text = payload.decode("utf-8")
+    matches = list(re.finditer(r"(?m)^## (U-\d{3,})\s*$", text))
+    output: list[str] = []
+    cursor = 0
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        if match.group(1) in excluded:
+            output.append(text[cursor : match.start()])
+            cursor = end
+    output.append(text[cursor:])
+    return "".join(output).encode("utf-8")
+
+
+def review_source_snapshot(
+    root: Path,
+    excluded_user_sources: set[str] | None = None,
+) -> str:
+    entries: list[tuple[Path, bytes]] = []
+    for relative in review_source_paths(root):
+        path = root / relative
+        if not path.is_file() or path.is_symlink():
+            continue
+        payload = path.read_bytes()
+        if relative == Path("docs/plan-docs/00-source/用户原话.md"):
+            payload = without_user_records(
+                payload,
+                excluded_user_sources or set(),
+            )
+            payload = payload.rstrip(b"\r\n") + b"\n"
+        entries.append((relative, payload))
+    return snapshot_digest(entries)
+
+
+def review_source_snapshot_at_commit(root: Path, commit: str) -> str | None:
+    entries: list[tuple[Path, bytes]] = []
+    for relative in review_source_paths(root):
+        result = subprocess.run(
+            ["git", "-C", str(root), "show", f"{commit}:{relative.as_posix()}"],
+            capture_output=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return None
+        payload = result.stdout
+        if relative == Path("docs/plan-docs/00-source/用户原话.md"):
+            payload = payload.rstrip(b"\r\n") + b"\n"
+        entries.append((relative, payload))
+    return snapshot_digest(entries)
+
+
+def git_command(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", "-C", str(root), "-c", "core.quotePath=false", *args],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def validate_git_checkpoint(
+    root: Path,
+    tree: Path,
+    environment: str,
+    summary: str,
+    known_user_sources: set[str],
+    user_verbatim_by_id: dict[str, str],
+    approval_source: str,
+    require_final_artifacts: bool,
+    errors: list[str],
+) -> None:
+    policy = scalar(environment, "git_policy")
+    if policy == "disabled":
+        source = scalar(environment, "git_disabled_approval_source_user_words")
+        quote = scalar(environment, "git_disabled_approval_quote")
+        verbatim = user_verbatim_by_id.get(source, "")
+        if (
+            source not in known_user_sources
+            or not quote
+            or quote not in verbatim
+            or not re.search(
+                r"(?i)(git|commit|版本|提交).*(disable|disabled|禁用|不用|不提交)",
+                quote,
+            )
+        ):
+            errors.append(
+                "git-disabled automatic mode lacks an explicit U-* degradation approval"
+            )
+        return
+    checkpoint = scalar(summary, "reviewed_checkpoint")
+    if not re.fullmatch(r"[0-9a-f]{40}", checkpoint):
+        errors.append("reviewed_checkpoint must be a full 40-character Git commit")
+        return
+    top = git_command(root, "rev-parse", "--show-toplevel")
+    if top.returncode != 0 or Path(top.stdout.strip()).resolve() != root:
+        errors.append("automatic mode requires the target root to be its Git worktree root")
+        return
+    exists = git_command(root, "cat-file", "-e", f"{checkpoint}^{{commit}}")
+    if exists.returncode != 0:
+        errors.append("reviewed_checkpoint does not resolve to a Git commit")
+        return
+    ancestor = git_command(root, "merge-base", "--is-ancestor", checkpoint, "HEAD")
+    if ancestor.returncode != 0:
+        errors.append("reviewed_checkpoint is not an ancestor of HEAD")
+    checkpoint_snapshot = review_source_snapshot_at_commit(root, checkpoint)
+    if (
+        checkpoint_snapshot is None
+        or checkpoint_snapshot
+        != review_source_snapshot(root, {approval_source})
+    ):
+        errors.append("planning source differs from the reviewed checkpoint")
+    status = git_command(
+        root,
+        "status",
+        "--porcelain=v1",
+        "-z",
+        "--untracked-files=all",
+    )
+    if status.returncode != 0:
+        errors.append("cannot inspect Git worktree status")
+        return
+    dirty_paths: list[str] = []
+    entries = [value for value in status.stdout.split("\0") if value]
+    for entry in entries:
+        path = entry[3:] if len(entry) >= 4 else entry
+        if " -> " in path:
+            path = path.split(" -> ", 1)[1]
+        dirty_paths.append(path)
+    if require_final_artifacts:
+        allowed_prefixes = (
+            "docs/plan-docs/07-goals/",
+            "docs/plan-docs/08-automation/",
+            ".plan-docs/",
+            ".githooks/",
+        )
+        allowed_exact = {".claude/settings.json"}
+        unexpected = [
+            path
+            for path in dirty_paths
+            if path not in allowed_exact
+            and not any(path.startswith(prefix) for prefix in allowed_prefixes)
+        ]
+        if unexpected:
+            errors.append(
+                "post-checkpoint worktree has unexpected changes: "
+                + ", ".join(sorted(unexpected))
+            )
+        guard_script = Path(__file__).with_name("plan-docs-guards.py")
+        verify_results = [
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(guard_script),
+                    "verify",
+                    "--project",
+                    str(root),
+                    *extra,
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            for extra in ([], ["--allow-existing-hooks-path"])
+        ]
+        if all(result.returncode != 0 for result in verify_results):
+            errors.append("guard verification failed before final execution artifacts")
+    elif dirty_paths:
+        errors.append(
+            "gate-ready requires a clean worktree at the reviewed checkpoint: "
+            + ", ".join(sorted(dirty_paths))
+        )
 
 
 def validate_task(task: dict[str, object], label: str, errors: list[str]) -> None:
@@ -384,6 +640,7 @@ def validate_ready(
     errors: list[str],
     require_final_artifacts: bool,
     known_user_sources: set[str],
+    user_verbatim_by_id: dict[str, str],
 ) -> None:
     gate_path = tree / "06-reviews/自动模式门禁.md"
     gate = gate_path.read_text(encoding="utf-8") if gate_path.exists() else ""
@@ -394,6 +651,24 @@ def validate_ready(
     approved = scalar(gate, "approved_by_user")
     if not approved or approved.lower() in {"no", "false", "todo"}:
         errors.append("automatic mode gate has no concrete user approval")
+    approval_source = scalar(gate, "approval_source_user_words")
+    approval_quote = scalar(gate, "approval_quote")
+    approval_verbatim = user_verbatim_by_id.get(approval_source, "")
+    if approval_source not in user_verbatim_by_id:
+        errors.append("automatic mode approval is not bound to an existing U-* source")
+    elif (
+        not approval_quote
+        or approval_quote not in approval_verbatim
+        or not re.search(
+            r"(?i)(approve|confirm|批准|确认|同意|认可|可以按|就按)",
+            approval_quote,
+        )
+    ):
+        errors.append("automatic mode approval quote is not an exact confirmation")
+    if user_verbatim_by_id and approval_source != next(reversed(user_verbatim_by_id)):
+        errors.append("automatic mode approval must be the latest U-* record")
+    if not scalar(gate, "approved_at"):
+        errors.append("automatic mode approval has no timestamp")
     gate_tables = [table for table in tables(gate) if table[0][:3] == ["gate", "status", "evidence"]]
     if not gate_tables:
         errors.append("automatic mode gate table is missing")
@@ -417,6 +692,13 @@ def validate_ready(
         errors.append("environment confirmation has unsupported available_ais value")
     if scalar(environment, "confirmed_by_user") != "yes":
         errors.append("environment and role split are not confirmed by the user")
+    confirmation_source = scalar(environment, "confirmation_source_user_words")
+    confirmation_quote = scalar(environment, "confirmation_quote")
+    confirmation_verbatim = user_verbatim_by_id.get(confirmation_source, "")
+    if confirmation_source not in user_verbatim_by_id:
+        errors.append("environment confirmation is not bound to an existing U-* source")
+    elif not confirmation_quote or confirmation_quote not in confirmation_verbatim:
+        errors.append("environment confirmation quote is not exact user wording")
     for field in ("planning_owner", "coordinator", "merge_authority", "reviewer"):
         if not scalar(environment, field):
             errors.append(f"environment confirmation has empty {field}")
@@ -433,11 +715,27 @@ def validate_ready(
 
     summary_path = tree / "06-reviews/审查汇总.md"
     summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
+    validate_git_checkpoint(
+        tree.parent.parent,
+        tree,
+        environment,
+        summary,
+        known_user_sources,
+        user_verbatim_by_id,
+        approval_source,
+        require_final_artifacts,
+        errors,
+    )
     summary_round = scalar(summary, "review_round")
     if not summary_round:
         errors.append("review summary has no review_round")
     if not scalar(summary, "reviewed_checkpoint"):
         errors.append("review summary has no reviewed_checkpoint")
+    if scalar(gate, "approved_checkpoint") != scalar(summary, "reviewed_checkpoint"):
+        errors.append("user approval is not bound to the reviewed checkpoint")
+    reviewed_checkpoint = scalar(summary, "reviewed_checkpoint")
+    if reviewed_checkpoint and reviewed_checkpoint not in approval_quote:
+        errors.append("exact user approval quote does not name the reviewed checkpoint")
     if scalar(summary, "overall") not in {"GREEN", "YELLOW"}:
         errors.append("review summary overall verdict is blocking or missing")
     summary_finding_rows: dict[str, dict[str, str]] = {}
@@ -456,6 +754,52 @@ def validate_ready(
     found_reviewers: set[str] = set()
     found_report_paths: set[Path] = set()
     raw_finding_ids: set[str] = set()
+    dispatch_path = tree / "06-reviews/审查分发与写锁.md"
+    dispatch = (
+        dispatch_path.read_text(encoding="utf-8") if dispatch_path.exists() else ""
+    )
+    dispatch_rows: dict[str, dict[str, str]] = {}
+    dispatch_ids: list[str] = []
+    dispatch_run_ids: list[str] = []
+    dispatch_nonces: list[str] = []
+    expected_source_snapshot = review_source_snapshot(
+        tree.parent.parent,
+        {approval_source},
+    )
+    for header, rows in tables(dispatch):
+        if not {
+            "reviewer_id",
+            "owner",
+            "report_path",
+            "status",
+            "sha256",
+            "bytes",
+            "run_id",
+            "dispatch_nonce",
+            "source_snapshot_sha256",
+        }.issubset(header):
+            continue
+        for row in rows:
+            mapped = dict(zip(header, row))
+            if mapped.get("reviewer_id"):
+                dispatch_ids.append(mapped["reviewer_id"])
+                dispatch_run_ids.append(mapped.get("run_id", ""))
+                dispatch_nonces.append(mapped.get("dispatch_nonce", ""))
+                dispatch_rows[mapped["reviewer_id"]] = mapped
+    if len(dispatch_ids) != len(set(dispatch_ids)):
+        errors.append("review dispatch registry has duplicate reviewer_id rows")
+    if scalar(dispatch, "review_round") != summary_round:
+        errors.append("review dispatch round differs from review summary")
+    if (
+        any(not value for value in dispatch_run_ids)
+        or len(dispatch_run_ids) != len(set(dispatch_run_ids))
+    ):
+        errors.append("review dispatch run_id values must be non-empty and unique")
+    if (
+        any(not value for value in dispatch_nonces)
+        or len(dispatch_nonces) != len(set(dispatch_nonces))
+    ):
+        errors.append("review dispatch nonce values must be non-empty and unique")
     if not verdict_tables:
         errors.append("review summary has no A1-A6 verdict table")
     else:
@@ -470,8 +814,8 @@ def validate_ready(
             found_reviewers.add(reviewer)
             if row[verdict_index] not in {"GREEN", "YELLOW"}:
                 errors.append(f"{reviewer} has blocking or missing verdict")
-            if row[isolation_index] not in {"clean", "degraded"}:
-                errors.append(f"{reviewer} has no context-isolation evidence")
+            if row[isolation_index] != "clean":
+                errors.append(f"{reviewer} latest report is not from a clean context")
             report_ref = row[report_index] if report_index >= 0 else ""
             if not report_ref:
                 errors.append(f"{reviewer} has no report_ref")
@@ -489,6 +833,40 @@ def validate_ready(
                     errors.append(f"{reviewer} report_ref does not exist: {report_ref}")
                 else:
                     report = report_path.read_text(encoding="utf-8")
+                    dispatch_row = dispatch_rows.get(reviewer)
+                    if dispatch_row is None:
+                        errors.append(f"{reviewer} has no review dispatch provenance")
+                    else:
+                        if dispatch_row.get("owner") != f"Reviewer-{reviewer}":
+                            errors.append(f"{reviewer} dispatch owner is not Reviewer-{reviewer}")
+                        if dispatch_row.get("report_path") != report_ref.split("#", 1)[0]:
+                            errors.append(f"{reviewer} dispatch path differs from report_ref")
+                        if dispatch_row.get("status") != "immutable":
+                            errors.append(f"{reviewer} raw report is not marked immutable")
+                        report_bytes = report_path.read_bytes()
+                        expected_hash = hashlib.sha256(report_bytes).hexdigest()
+                        if dispatch_row.get("sha256") != expected_hash:
+                            errors.append(f"{reviewer} raw report SHA-256 provenance mismatch")
+                        if dispatch_row.get("bytes") != str(len(report_bytes)):
+                            errors.append(f"{reviewer} raw report byte-count provenance mismatch")
+                        if (
+                            dispatch_row.get("source_snapshot_sha256")
+                            != expected_source_snapshot
+                        ):
+                            errors.append(
+                                f"{reviewer} review source snapshot does not match current planning"
+                            )
+                        for report_field, dispatch_field in (
+                            ("review_run_id", "run_id"),
+                            ("dispatch_nonce", "dispatch_nonce"),
+                            ("source_snapshot_sha256", "source_snapshot_sha256"),
+                        ):
+                            if scalar(report, report_field) != dispatch_row.get(
+                                dispatch_field
+                            ):
+                                errors.append(
+                                    f"{reviewer} raw {report_field} differs from dispatch provenance"
+                                )
                     raw_severity_counts = {"P0": 0, "P1": 0, "P2": 0}
                     if scalar(report, "reviewer_id") != reviewer:
                         errors.append(f"{reviewer} raw report has mismatched reviewer_id")
@@ -651,6 +1029,75 @@ def validate_ready(
     for cycle in dependency_cycles(dependencies_by_id):
         errors.append("task dependency cycle: " + " -> ".join(cycle))
 
+    registry_path = tree / "04-tasks/任务合同注册表.md"
+    registry_text = registry_path.read_text(encoding="utf-8") if registry_path.exists() else ""
+    contracts: dict[str, dict[str, object]] = {}
+    contract_blocks = id_blocks(registry_text, "CONTRACT")
+    contract_ids = [contract_id for contract_id, _ in contract_blocks]
+    if len(contract_ids) != len(set(contract_ids)):
+        errors.append("任务合同注册表.md contains duplicate CONTRACT-* headings")
+    for contract_id, block in contract_blocks:
+        contract = {
+            "contract_id": raw_field(block, "contract_id"),
+            "producer_tasks": list_values(raw_field(block, "producer_tasks")),
+            "consumer_tasks": list_values(raw_field(block, "consumer_tasks")),
+            "artifact_refs": list_values(raw_field(block, "artifact_refs")),
+            "required_content": raw_field(block, "required_content"),
+            "completion_condition": raw_field(block, "completion_condition"),
+            "verification": raw_field(block, "verification"),
+            "compatibility": raw_field(block, "compatibility"),
+            "status": raw_field(block, "status"),
+        }
+        contracts[contract_id] = contract
+        if contract["contract_id"] != contract_id:
+            errors.append(f"{contract_id} contract_id does not match heading")
+        for field in (
+            "producer_tasks",
+            "consumer_tasks",
+            "artifact_refs",
+            "required_content",
+            "completion_condition",
+            "verification",
+            "compatibility",
+        ):
+            if not contract[field]:
+                errors.append(f"{contract_id} has empty {field}")
+        if contract["status"] != "frozen":
+            errors.append(f"{contract_id} is not frozen")
+        for field in ("producer_tasks", "consumer_tasks"):
+            for task_id in contract[field]:
+                if task_id not in total_ids:
+                    errors.append(f"{contract_id} {field} references unknown task {task_id}")
+        for task_id in contract["producer_tasks"]:
+            if task_id in total_by_id and contract_id not in (
+                total_by_id[task_id].get("output_contracts") or []
+            ):
+                errors.append(
+                    f"{contract_id} names {task_id} as a producer but the task does not output it"
+                )
+        for task_id in contract["consumer_tasks"]:
+            if task_id in total_by_id and contract_id not in (
+                total_by_id[task_id].get("input_contracts") or []
+            ):
+                errors.append(
+                    f"{contract_id} names {task_id} as a consumer but the task does not input it"
+                )
+
+    for task in total_tasks:
+        task_id = str(task["task_id"])
+        for contract_id in task.get("input_contracts") or []:
+            contract = contracts.get(contract_id)
+            if contract is None:
+                errors.append(f"{task_id} references undefined input contract {contract_id}")
+            elif task_id not in contract["consumer_tasks"]:
+                errors.append(f"{contract_id} does not name {task_id} as a consumer")
+        for contract_id in task.get("output_contracts") or []:
+            contract = contracts.get(contract_id)
+            if contract is None:
+                errors.append(f"{task_id} references undefined output contract {contract_id}")
+            elif task_id not in contract["producer_tasks"]:
+                errors.append(f"{contract_id} does not name {task_id} as a producer")
+
     for index, left in enumerate(total_tasks):
         left_id = str(left["task_id"])
         left_locks = list(left.get("write_lock") or [])
@@ -774,17 +1221,27 @@ def audit(
     tree = root / "docs/plan-docs"
     errors: list[str] = []
     for relative in BASE_FILES:
-        if not (tree / relative).is_file():
+        candidate = tree / relative
+        if not candidate.is_file():
             errors.append(f"missing docs/plan-docs/{relative}")
+        elif candidate.is_symlink():
+            errors.append(f"unsafe symlink at docs/plan-docs/{relative}")
     if not (root / "AGENTS.md").is_file():
         errors.append("missing AGENTS.md")
+    elif (root / "AGENTS.md").is_symlink():
+        errors.append("unsafe symlink at AGENTS.md")
     if not (root / "CURRENT_STATE.md").is_file():
         errors.append("missing CURRENT_STATE.md")
+    elif (root / "CURRENT_STATE.md").is_symlink():
+        errors.append("unsafe symlink at CURRENT_STATE.md")
 
     user_words = tree / "00-source/用户原话.md"
     known_user_sources: set[str] = set()
+    user_verbatim_by_id: dict[str, str] = {}
     if user_words.exists():
         user_text = user_words.read_text(encoding="utf-8")
+        if not user_words_schema_is_strict(user_text):
+            errors.append("用户原话.md contains content outside the strict U-* schema")
         user_matches = list(
             re.finditer(r"(?m)^#{2,6}\s+(U-\d{3,})\s*$", user_text)
         )
@@ -809,32 +1266,68 @@ def audit(
             )
             verbatim = verbatim_match.group(1).strip() if verbatim_match else ""
             if (require_gate_ready or require_final_artifacts) and (
-                not verbatim or FINAL_PROMPT_PLACEHOLDER.search(verbatim)
+                not verbatim or USER_WORD_TEMPLATE_PLACEHOLDER.search(verbatim)
             ):
                 errors.append(f"{user_id} has empty or placeholder verbatim content")
+            user_verbatim_by_id[user_id] = verbatim
         if len(ids) != len(set(ids)):
             errors.append("duplicate user-word record_id values")
         numbers = [int(value.split("-", 1)[1]) for value in ids]
-        if numbers != sorted(numbers):
-            errors.append("user-word IDs are not in monotonically increasing order")
+        if numbers != list(range(1, len(numbers) + 1)):
+            errors.append("user-word IDs must be contiguous from U-001")
 
     trace_path = tree / "01-requirements/需求追踪矩阵.md"
     if trace_path.exists():
+        legacy_ids: set[str] = set()
         for header, rows in tables(trace_path.read_text(encoding="utf-8")):
             if not {"legacy_id", "source_path", "content_hash"}.issubset(header):
                 continue
             legacy_index = header.index("legacy_id")
             source_index = header.index("source_path")
             hash_index = header.index("content_hash")
+            anchor_index = header.index("source_anchor") if "source_anchor" in header else -1
             for row in rows:
                 legacy_id = row[legacy_index]
                 if re.fullmatch(r"LEGACY-U-[A-Za-z0-9-]+", legacy_id):
-                    if row[source_index] and row[hash_index]:
-                        known_user_sources.add(legacy_id)
-                    elif require_gate_ready or require_final_artifacts:
+                    if legacy_id in legacy_ids:
+                        errors.append(f"duplicate legacy_id mapping: {legacy_id}")
+                        continue
+                    legacy_ids.add(legacy_id)
+                    source_value = row[source_index].strip()
+                    hash_value = row[hash_index].strip()
+                    anchor_value = row[anchor_index].strip() if anchor_index >= 0 else ""
+                    if not source_value or not hash_value or anchor_value != "whole-file":
                         errors.append(
-                            f"{legacy_id} has no concrete source_path and content_hash"
+                            f"{legacy_id} requires source_path, source_anchor=whole-file "
+                            "and SHA-256 content_hash"
                         )
+                        continue
+                    source_relative = Path(source_value)
+                    if source_relative.is_absolute():
+                        errors.append(f"{legacy_id} source_path must be project-relative")
+                        continue
+                    source_path = (root / source_relative).resolve()
+                    try:
+                        source_path.relative_to(root)
+                    except ValueError:
+                        errors.append(f"{legacy_id} source_path escapes the project")
+                        continue
+                    if not source_path.is_file() or source_path.is_symlink():
+                        errors.append(f"{legacy_id} source_path is missing or unsafe")
+                        continue
+                    normalized_hash = (
+                        hash_value.split(":", 1)[1]
+                        if hash_value.startswith("sha256:")
+                        else hash_value
+                    )
+                    if not re.fullmatch(r"[0-9a-f]{64}", normalized_hash):
+                        errors.append(f"{legacy_id} content_hash is not SHA-256")
+                        continue
+                    actual_hash = hashlib.sha256(source_path.read_bytes()).hexdigest()
+                    if normalized_hash != actual_hash:
+                        errors.append(f"{legacy_id} content_hash does not match source bytes")
+                        continue
+                    known_user_sources.add(legacy_id)
 
     total_tasks = tree / "04-tasks/总任务文档.md"
     if total_tasks.exists() and not task_blocks(total_tasks.read_text(encoding="utf-8")):
@@ -846,6 +1339,7 @@ def audit(
             errors,
             require_final_artifacts=require_final_artifacts,
             known_user_sources=known_user_sources,
+            user_verbatim_by_id=user_verbatim_by_id,
         )
 
     if errors:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -36,6 +37,50 @@ def init_repo(project: Path) -> None:
             "--init-tree",
         ]
     )
+
+
+def run_scope_guard(
+    project: Path,
+    payload: dict[str, object] | str,
+) -> subprocess.CompletedProcess[str]:
+    raw_payload = payload if isinstance(payload, str) else json.dumps(payload)
+    environment = os.environ.copy()
+    environment["CLAUDE_PROJECT_DIR"] = str(project)
+    return subprocess.run(
+        ["python3", str(project / ".plan-docs/hooks/scope_guard.py")],
+        cwd=project,
+        input=raw_payload,
+        capture_output=True,
+        text=True,
+        env=environment,
+        check=False,
+    )
+
+
+def activate_scope(
+    project: Path,
+    *,
+    allowed: list[str],
+    locks: list[str],
+    allow_user_words_append: bool = False,
+) -> Path:
+    current_path = project / "docs/plan-docs/05-execution/current-task.json"
+    current = json.loads(current_path.read_text(encoding="utf-8"))
+    current.update(
+        {
+            "task_id": "TASK-SCOPE-001",
+            "owner": "Claude",
+            "allowed_scope": allowed,
+            "forbidden_scope": ["secrets/**"],
+            "write_lock": locks,
+            "allow_user_words_append": allow_user_words_append,
+        }
+    )
+    current_path.write_text(
+        json.dumps(current, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return current_path
 
 
 class GuardTests(unittest.TestCase):
@@ -76,6 +121,14 @@ class GuardTests(unittest.TestCase):
                 if item.get("matcher") == "Bash"
             ]
             self.assertEqual(1, len(bash_entries))
+            self.assertTrue(
+                any(
+                    "Bash" in str(item.get("matcher"))
+                    and "scope_guard.py"
+                    in json.dumps(item.get("hooks"), ensure_ascii=False)
+                    for item in installed["hooks"]["PreToolUse"]
+                )
+            )
             self.assertEqual(installed, installed_twice)
             self.assertEqual(
                 ".githooks",
@@ -122,9 +175,29 @@ class GuardTests(unittest.TestCase):
 
             for name in ("pre-commit", "commit-msg", "pre-push"):
                 hook = custom_hooks / name
-                original = hook.read_text(encoding="utf-8") if hook.exists() else "#!/bin/sh\n"
                 hook.write_text(
-                    original
+                    f"#!/bin/sh\n: .plan-docs/git-hooks/{name}; exit 0\n",
+                    encoding="utf-8",
+                )
+                hook.chmod(0o755)
+            no_op_verify = command(
+                [
+                    "python3",
+                    str(GUARDS),
+                    "verify",
+                    "--project",
+                    str(project),
+                    "--allow-existing-hooks-path",
+                ],
+                check=False,
+            )
+            self.assertEqual(1, no_op_verify.returncode)
+            self.assertIn("does not execute", no_op_verify.stdout)
+
+            for name in ("pre-commit", "commit-msg", "pre-push"):
+                hook = custom_hooks / name
+                hook.write_text(
+                    "#!/bin/sh\n"
                     + f'"$(git rev-parse --show-toplevel)/.plan-docs/git-hooks/{name}" "$@"\n',
                     encoding="utf-8",
                 )
@@ -312,6 +385,25 @@ class GuardTests(unittest.TestCase):
             project = Path(temporary)
             init_repo(project)
             command(["python3", str(GUARDS), "install", "--project", str(project)])
+            user_words = project / "docs/plan-docs/00-source/用户原话.md"
+            user_words.write_text(
+                """# 用户原话
+
+## U-001
+
+record_id: U-001
+
+time: 2026-07-25T00:00:00Z
+
+source: user
+
+context: baseline
+
+verbatim: |
+  exact first message
+""",
+                encoding="utf-8",
+            )
             command(["git", "-C", str(project), "add", "."])
             command(
                 [
@@ -325,7 +417,6 @@ class GuardTests(unittest.TestCase):
                     "baseline",
                 ]
             )
-            user_words = project / "docs/plan-docs/00-source/用户原话.md"
             original = user_words.read_text(encoding="utf-8")
             user_words.write_text(original.replace("# 用户原话", "# 改写"), encoding="utf-8")
             command(
@@ -345,11 +436,31 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(1, result.returncode)
             self.assertIn("append-only", result.stderr)
 
-    def test_precommit_rejects_middle_insert_but_allows_exact_append(self) -> None:
+    def test_precommit_rejects_renaming_user_words_into_allowed_scope(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary)
             init_repo(project)
             command(["python3", str(GUARDS), "install", "--project", str(project)])
+            user_words = project / "docs/plan-docs/00-source/用户原话.md"
+            user_words.write_text(
+                """# 用户原话
+
+## U-001
+
+record_id: U-001
+
+time: 2026-07-25T00:00:00Z
+
+source: user
+
+context: baseline
+
+verbatim: |
+  exact first message
+""",
+                encoding="utf-8",
+            )
+            (project / "src").mkdir()
             command(["git", "-C", str(project), "add", "."])
             command(
                 [
@@ -363,10 +474,98 @@ class GuardTests(unittest.TestCase):
                     "baseline",
                 ]
             )
+            current_path = activate_scope(
+                project,
+                allowed=["src/**"],
+                locks=["src/**"],
+            )
+            current = json.loads(current_path.read_text(encoding="utf-8"))
+            current.update(
+                {
+                    "feedback_record": "FB-SCOPE-001",
+                    "verification_commands": ["true"],
+                    "test_commands": ["true"],
+                    "stop_conditions": "stop on failure",
+                }
+            )
+            current_path.write_text(
+                json.dumps(current, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            feedback_path = project / "docs/plan-docs/05-execution/执行反馈日志.md"
+            feedback_path.write_text(
+                feedback_path.read_text(encoding="utf-8")
+                + "\nfeedback_id: FB-SCOPE-001\ntask_id: TASK-SCOPE-001\n",
+                encoding="utf-8",
+            )
+            command(
+                [
+                    "git",
+                    "-C",
+                    str(project),
+                    "mv",
+                    user_words.relative_to(project).as_posix(),
+                    "src/stolen.md",
+                ]
+            )
+            command(
+                [
+                    "git",
+                    "-C",
+                    str(project),
+                    "add",
+                    current_path.relative_to(project).as_posix(),
+                    feedback_path.relative_to(project).as_posix(),
+                ]
+            )
+            result = command(
+                ["python3", str(project / ".plan-docs/hooks/pre_commit.py")],
+                cwd=project,
+                check=False,
+            )
+            self.assertEqual(1, result.returncode)
+            self.assertIn("append-only", result.stderr)
+
+    def test_precommit_rejects_middle_insert_but_allows_exact_append(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            init_repo(project)
+            command(["python3", str(GUARDS), "install", "--project", str(project)])
             user_words = project / "docs/plan-docs/00-source/用户原话.md"
+            user_words.write_text(
+                """# 用户原话
+
+## U-001
+
+record_id: U-001
+
+time: 2026-07-25T00:00:00Z
+
+source: user
+
+context: baseline
+
+verbatim: |
+  exact first message
+""",
+                encoding="utf-8",
+            )
+            command(["git", "-C", str(project), "add", "."])
+            command(
+                [
+                    "git",
+                    "-C",
+                    str(project),
+                    "-c",
+                    "core.hooksPath=/dev/null",
+                    "commit",
+                    "-qm",
+                    "baseline",
+                ]
+            )
             original = user_words.read_text(encoding="utf-8")
             user_words.write_text(
-                original.replace("## U-001", "AI_NOT_USER\n\n## U-001"),
+                original.replace("\n", "\nAI_NOT_USER\n", 1),
                 encoding="utf-8",
             )
             command(["git", "-C", str(project), "add", user_words.relative_to(project).as_posix()])
@@ -394,7 +593,25 @@ class GuardTests(unittest.TestCase):
                 json.dumps(current, ensure_ascii=False, indent=2) + "\n",
                 encoding="utf-8",
             )
-            user_words.write_text(original + "\n## U-002\n", encoding="utf-8")
+            user_words.write_text(
+                original
+                + """
+
+## U-002
+
+record_id: U-002
+
+time: 2026-07-25T00:01:00Z
+
+source: user
+
+context: follow-up
+
+verbatim: |
+  exact second message
+""",
+                encoding="utf-8",
+            )
             command(
                 [
                     "git",
@@ -473,6 +690,171 @@ class GuardTests(unittest.TestCase):
             )
             self.assertEqual(1, result.returncode)
             self.assertIn("forbidden scope", result.stderr)
+
+    def test_scope_guard_allows_read_only_bash_and_scopes_literal_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            init_repo(project)
+            command(["python3", str(GUARDS), "install", "--project", str(project)])
+            activate_scope(project, allowed=["src/**"], locks=["src/**"])
+
+            read_only = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {
+                        "command": (
+                            'rg -n TODO src && cat "$INPUT" 2>/dev/null; '
+                            "git diff -- src"
+                        )
+                    },
+                },
+            )
+            inside = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "printf '%s\\n' ok > src/result.txt"},
+                },
+            )
+            outside = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "echo bad > outside.txt"},
+                },
+            )
+            copied_outside = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "cp src/input.txt outside.txt"},
+                },
+            )
+
+            self.assertEqual(0, read_only.returncode, read_only.stderr)
+            self.assertEqual(0, inside.returncode, inside.stderr)
+            self.assertEqual(2, outside.returncode)
+            self.assertIn("outside allowed scope", outside.stderr)
+            self.assertEqual(2, copied_outside.returncode)
+            self.assertIn("outside allowed scope", copied_outside.stderr)
+
+    def test_scope_guard_requires_an_active_contract_only_for_writes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            init_repo(project)
+            command(["python3", str(GUARDS), "install", "--project", str(project)])
+
+            read_only = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "git status --short && cat README.md"},
+                },
+            )
+            bash_write = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "printf x > src/result.txt"},
+                },
+            )
+            edit_write = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Write",
+                    "tool_input": {"file_path": "src/result.txt"},
+                },
+            )
+
+            self.assertEqual(0, read_only.returncode, read_only.stderr)
+            self.assertEqual(2, bash_write.returncode)
+            self.assertIn("without an activated task contract", bash_write.stderr)
+            self.assertEqual(2, edit_write.returncode)
+            self.assertIn("without an activated task contract", edit_write.stderr)
+
+    def test_scope_guard_only_allows_verifiable_shell_append_to_user_words(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            init_repo(project)
+            command(["python3", str(GUARDS), "install", "--project", str(project)])
+            user_words = "docs/plan-docs/00-source/用户原话.md"
+            activate_scope(
+                project,
+                allowed=[user_words],
+                locks=[user_words],
+                allow_user_words_append=True,
+            )
+
+            appended = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"printf '\\nU-002\\n' >> {user_words}"},
+                },
+            )
+            overwritten = run_scope_guard(
+                project,
+                {
+                    "tool_name": "Bash",
+                    "tool_input": {"command": f"printf rewritten > {user_words}"},
+                },
+            )
+
+            self.assertEqual(0, appended.returncode, appended.stderr)
+            self.assertEqual(2, overwritten.returncode)
+            self.assertIn("may only use a verifiable append", overwritten.stderr)
+
+    def test_scope_guard_fails_closed_for_ambiguous_high_risk_bash(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            init_repo(project)
+            command(["python3", str(GUARDS), "install", "--project", str(project)])
+            activate_scope(project, allowed=["src/**"], locks=["src/**"])
+
+            cases = (
+                'rm -rf "$TARGET"',
+                "cd src && printf x > result.txt",
+                "git reset --hard",
+                "sed -i s/old/new/ src/result.txt",
+                "python3 -c \"open('src/result.txt', 'w').write('x')\"",
+                "sh -c 'printf hacked > outside.txt'",
+                """printf '%s' "$(touch outside2.txt)" """,
+            )
+            for shell_command in cases:
+                with self.subTest(shell_command=shell_command):
+                    result = run_scope_guard(
+                        project,
+                        {
+                            "tool_name": "Bash",
+                            "tool_input": {"command": shell_command},
+                        },
+                    )
+                    self.assertEqual(2, result.returncode)
+                    self.assertIn("ambiguous high-risk", result.stderr)
+
+    def test_scope_guard_internal_errors_fail_closed_for_configured_write_tools(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary)
+            init_repo(project)
+            command(["python3", str(GUARDS), "install", "--project", str(project)])
+            current_path = activate_scope(
+                project,
+                allowed=["src/**"],
+                locks=["src/**"],
+            )
+            current_path.write_text("{ invalid json\n", encoding="utf-8")
+
+            payloads = (
+                {"tool_name": "Edit", "tool_input": {"file_path": "src/a.txt"}},
+                {"tool_name": "Write", "tool_input": {"file_path": "src/a.txt"}},
+                {"tool_name": "Bash", "tool_input": {"command": "cat src/a.txt"}},
+            )
+            for payload in payloads:
+                with self.subTest(tool_name=payload["tool_name"]):
+                    result = run_scope_guard(project, payload)
+                    self.assertEqual(2, result.returncode)
+                    self.assertIn("internal scope-guard error", result.stderr)
 
 
 if __name__ == "__main__":

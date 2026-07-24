@@ -66,7 +66,18 @@ def matches(path: str, patterns: list[str]) -> bool:
 
 
 def staged_paths(root: Path) -> list[str]:
-    result = git(root, "diff", "--cached", "--name-only", "--diff-filter=ACDMRTUXB", "-z", text=False)
+    # Disable rename collapsing so both sides are checked. Otherwise moving a
+    # protected source file into an allowed path hides the protected old path.
+    result = git(
+        root,
+        "diff",
+        "--cached",
+        "--name-only",
+        "--no-renames",
+        "--diff-filter=ACDMRTUXB",
+        "-z",
+        text=False,
+    )
     if result.returncode != 0:
         raise RuntimeError(result.stderr.decode(errors="replace"))
     return [
@@ -81,14 +92,47 @@ def staged_text(root: Path, path: Path) -> str:
     return result.stdout if result.returncode == 0 else ""
 
 
+def valid_new_user_words(blob: bytes) -> bool:
+    try:
+        text = blob.decode("utf-8")
+    except UnicodeDecodeError:
+        return False
+    if not text.startswith("# 用户原话\n"):
+        return False
+    matches = list(re.finditer(r"(?m)^## U-(\d{3,})\s*$", text))
+    if not matches:
+        return text.strip() == "# 用户原话"
+    if text[: matches[0].start()].strip() != "# 用户原话":
+        return False
+    numbers = [int(match.group(1)) for match in matches]
+    if numbers != list(range(1, len(numbers) + 1)):
+        return False
+    for index, match in enumerate(matches):
+        record_id = f"U-{int(match.group(1)):03d}"
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(text)
+        block = text[match.end() : end]
+        record = re.fullmatch(
+            rf"\s*record_id:[ \t]*{re.escape(record_id)}[ \t]*\n"
+            r"\s*time:[ \t]*[^\n]+[ \t]*\n"
+            r"\s*source:[ \t]*[^\n]+[ \t]*\n"
+            r"\s*context:[ \t]*[^\n]+[ \t]*\n"
+            r"\s*verbatim:[ \t]*[|>][ \t]*\n"
+            r"(?P<verbatim>(?:[ \t]+[^\n]*(?:\n|$))+)\s*",
+            block,
+        )
+        if not record or not record.group("verbatim").strip():
+            return False
+    return True
+
+
 def user_words_is_append_only(root: Path, path: Path) -> bool:
     staged = git(root, "show", f":{path.as_posix()}", text=False)
     if staged.returncode != 0:
         return False
     head = git(root, "show", f"HEAD:{path.as_posix()}", text=False)
     if head.returncode != 0:
-        return True
-    return staged.stdout.startswith(head.stdout)
+        return valid_new_user_words(staged.stdout)
+    return staged.stdout.startswith(head.stdout) and valid_new_user_words(staged.stdout)
 
 
 def run_commands(root: Path, commands: list[str], label: str) -> int:
@@ -128,6 +172,13 @@ def main() -> int:
                 f"{user_words_name} is strict append-only; "
                 "the staged blob must preserve the entire HEAD blob as an exact byte prefix"
             )
+        head = git(root, "show", f"HEAD:{user_words_name}", text=False)
+        if head.returncode != 0 and not re.search(
+            r"(?m)^## U-\d{3,}\s*$",
+            staged_text(root, user_words_path),
+        ):
+            # A bootstrap may commit only the validated empty record set.
+            continue
         if not current.get("allow_user_words_append", False):
             return fail(
                 f"{user_words_name} append requires an activated intake task "
