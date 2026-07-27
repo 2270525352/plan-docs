@@ -1,0 +1,197 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
+  <title id="title">从原始想法到精确执行的 Plan Docs 工作流程</title>
+  <desc id="desc">原始想法依次经过需求对齐、项目规划和独立审查，最终成为可以精确执行的任务。</desc>
+
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+
+    .背景 {
+      fill: #f7f6f2;
+    }
+
+    .标题 {
+      fill: #172033;
+      font: 700 34px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      letter-spacing: -0.02em;
+    }
+
+    .说明 {
+      fill: #5b6575;
+      font: 400 17px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+
+    .步骤 {
+      fill: #263246;
+      font: 650 19px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      text-anchor: middle;
+    }
+
+    .证据 {
+      fill: #667386;
+      font: 400 15px -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      text-anchor: middle;
+    }
+
+    .静态轨道 {
+      fill: none;
+      stroke: #cbd2dc;
+      stroke-width: 4;
+      stroke-linecap: round;
+    }
+
+    .动态轨道 {
+      fill: none;
+      stroke: #2864dc;
+      stroke-width: 5;
+      stroke-linecap: round;
+      stroke-dasharray: 960;
+      stroke-dashoffset: 960;
+      filter: url(#柔光);
+      animation: 路径推进 4.8s cubic-bezier(0.16, 1, 0.3, 1) 0.35s forwards;
+    }
+
+    .节点外圈 {
+      fill: #f7f6f2;
+      stroke: #aeb8c6;
+      stroke-width: 3;
+    }
+
+    .节点核心 {
+      fill: #aeb8c6;
+    }
+
+    .阶段一 { animation: 节点点亮 0.7s ease-out 0.4s forwards; }
+    .阶段二 { animation: 节点点亮 0.7s ease-out 1.25s forwards; }
+    .阶段三 { animation: 节点点亮 0.7s ease-out 2.1s forwards; }
+    .阶段四 { animation: 节点点亮 0.7s ease-out 2.95s forwards; }
+    .阶段五 { animation: 节点完成 0.9s ease-out 3.8s forwards; }
+
+    .完成标记 {
+      fill: none;
+      stroke: #ffffff;
+      stroke-width: 4;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      stroke-dasharray: 34;
+      stroke-dashoffset: 34;
+      animation: 标记出现 0.5s ease-out 4.15s forwards;
+    }
+
+    @keyframes 路径推进 {
+      to { stroke-dashoffset: 0; }
+    }
+
+    @keyframes 节点点亮 {
+      0% { fill: #aeb8c6; transform: scale(1); }
+      55% { fill: #2864dc; transform: scale(1.28); }
+      100% { fill: #2864dc; transform: scale(1); }
+    }
+
+    @keyframes 节点完成 {
+      0% { fill: #aeb8c6; transform: scale(1); }
+      55% { fill: #18815f; transform: scale(1.35); }
+      100% { fill: #18815f; transform: scale(1.12); }
+    }
+
+    @keyframes 标记出现 {
+      to { stroke-dashoffset: 0; }
+    }
+
+    .节点核心 {
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      .背景 { fill: #101722; }
+      .标题 { fill: #f1f4f8; }
+      .说明 { fill: #aeb9c9; }
+      .步骤 { fill: #e7ecf3; }
+      .证据 { fill: #9ca9ba; }
+      .静态轨道 { stroke: #3d4858; }
+      .节点外圈 { fill: #101722; stroke: #5e6a7c; }
+      .节点核心 { fill: #647084; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .动态轨道 {
+        animation: none;
+        stroke-dashoffset: 0;
+        filter: none;
+      }
+
+      .节点核心 {
+        animation: none;
+        fill: #2864dc;
+      }
+
+      .阶段五 {
+        fill: #18815f;
+        transform: scale(1.12);
+      }
+
+      .完成标记 {
+        animation: none;
+        stroke-dashoffset: 0;
+      }
+    }
+  </style>
+
+  <defs>
+    <filter id="柔光" x="-10%" y="-80%" width="120%" height="260%">
+      <feGaussianBlur stdDeviation="5" result="模糊"/>
+      <feMerge>
+        <feMergeNode in="模糊"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect class="背景" width="1200" height="440" rx="18"/>
+
+  <text class="标题" x="72" y="72">先想清楚，再开始做</text>
+  <text class="说明" x="72" y="108">每一步都有来源、负责人、验收标准和可检查的证据</text>
+
+  <path class="静态轨道" d="M 120 220 H 1080"/>
+  <path class="动态轨道" d="M 120 220 H 1080"/>
+
+  <g>
+    <circle class="节点外圈" cx="120" cy="220" r="25"/>
+    <circle class="节点核心 阶段一" cx="120" cy="220" r="12"/>
+    <text class="步骤" x="120" y="282">原始想法</text>
+    <text class="证据" x="120" y="312">原话锚点</text>
+  </g>
+
+  <g>
+    <circle class="节点外圈" cx="360" cy="220" r="25"/>
+    <circle class="节点核心 阶段二" cx="360" cy="220" r="12"/>
+    <text class="步骤" x="360" y="282">需求对齐</text>
+    <text class="证据" x="360" y="312">需求基线</text>
+  </g>
+
+  <g>
+    <circle class="节点外圈" cx="600" cy="220" r="25"/>
+    <circle class="节点核心 阶段三" cx="600" cy="220" r="12"/>
+    <text class="步骤" x="600" y="282">项目规划</text>
+    <text class="证据" x="600" y="312">任务合同</text>
+  </g>
+
+  <g>
+    <circle class="节点外圈" cx="840" cy="220" r="25"/>
+    <circle class="节点核心 阶段四" cx="840" cy="220" r="12"/>
+    <text class="步骤" x="840" y="282">独立审查</text>
+    <text class="证据" x="840" y="312">门禁证据</text>
+  </g>
+
+  <g>
+    <circle class="节点外圈" cx="1080" cy="220" r="29"/>
+    <circle class="节点核心 阶段五" cx="1080" cy="220" r="16"/>
+    <path class="完成标记" d="M 1071 220 L 1078 227 L 1091 212"/>
+    <text class="步骤" x="1080" y="282">精确执行</text>
+    <text class="证据" x="1080" y="312">代码提交</text>
+  </g>
+
+  <text class="说明" x="72" y="390">需求没有确认，执行就不会提前开始。</text>
+</svg>
