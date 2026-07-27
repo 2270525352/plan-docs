@@ -52,6 +52,19 @@ class BootstrapTests(unittest.TestCase):
             self.assertFalse(
                 (project / "docs/plan-docs/04-tasks/OpenCode任务文档.md").exists()
             )
+            self.assertIn(
+                "plan_docs_schema: plan-docs/v1",
+                (project / "CURRENT_STATE.md").read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "web_dashboard: disabled / npx / installed",
+                (
+                    project
+                    / "docs/plan-docs/05-execution/环境与分工确认.md"
+                ).read_text(encoding="utf-8"),
+            )
+            self.assertFalse((project / "package.json").exists())
+            self.assertFalse((project / "node_modules").exists())
             self.assertEqual([], list(project.glob("AGENTS.md.plan-docs.*.bak")))
 
     def test_existing_agents_merge_and_current_state_preservation(self) -> None:

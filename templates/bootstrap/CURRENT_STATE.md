@@ -7,6 +7,8 @@ Read this file after `AGENTS.md` before planning, writing, reviewing or executin
 
 ## Current snapshot
 
+plan_docs_schema: plan-docs/v1
+
 current_phase: intake / requirements / product / architecture / tasks / review / ready / executing / blocked
 
 current_task:

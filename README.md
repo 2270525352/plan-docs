@@ -198,6 +198,18 @@ python3 <skill-dir>/scripts/plan-docs-guards.py verify --project <project>
 `git rev-parse --git-path hooks` 找到实际 hooks 目录，把三个 Plan Docs hook 显式串入现有
 manager 后，用 `verify --allow-existing-hooks-path` 验证，再通过自动模式门禁。
 
+## 可选 Web 项目看板
+
+Web 看板是独立 npm 伴生包，不属于技能核心依赖。用户明确需要时可运行：
+
+```bash
+npx plan-docs-dashboard --project <project>
+```
+
+它默认只监听本机、只读取规划文档和 Git 状态，不修改项目。用户不选择时不检查 Node、
+不运行 npm，也不向目标项目写入任何 Web 依赖。协议和安全边界见
+[`references/08-Web项目看板.md`](references/08-Web项目看板.md)。
+
 ## 旧版迁移
 
 旧版 `docs/用户原话.md`、`docs/00-项目说明书.md` 到 `docs/08-测试用例.md` 及 `docs/modules/` 不会被移动、删除或覆盖。新版在 `docs/plan-docs/` 建立规范树，通过 legacy 映射逐项迁移和确认；旧用户原话保持原样。

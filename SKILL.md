@@ -37,6 +37,7 @@ description: 在项目开发前把用户的原始想法收敛为需求对齐、�
    - `/goal` 适配、定时审查、Git 和护栏：[references/05-提示词自动化与Git.md](references/05-提示词自动化与Git.md)
    - 老项目兼容和迁移：[references/06-老项目与兼容迁移.md](references/06-老项目与兼容迁移.md)
    - 高保真原型：[references/07-高保真原型.md](references/07-高保真原型.md)
+   - 用户选择可选 Web 项目看板时：[references/08-Web项目看板.md](references/08-Web项目看板.md)
 
 ## 阶段 0：确认环境与分工
 
@@ -50,6 +51,7 @@ description: 在项目开发前把用户的原始想法收敛为需求对齐、�
 - 是否允许多 AI 并行；
 - Git：自动提交、确认后提交、禁用提交；
 - 是否需要 Codex App 每 30 分钟独立审查。
+- 是否需要可选 Web 项目看板；默认 `disabled`，只在用户明确选择后给出 `npx` 或安装命令。
 
 给出默认推荐，但必须由用户确认或修改。信息尚未确认时可以继续访谈和草拟规划，不得正式分配执行任务或进入自动模式。
 
@@ -229,6 +231,11 @@ python3 <skill-dir>/scripts/plan-docs-audit.py \
 - CCB 任务分发提示词。
 
 再生成 Codex App 定时审查提示词和启用说明。默认每 30 分钟；只检测并报告 GREEN/YELLOW/RED，不自动改代码或原话。不要静默创建自动化。
+
+用户确认需要 Web 项目看板时，按
+[references/08-Web项目看板.md](references/08-Web项目看板.md) 检查 Node 环境并启动独立
+npm 伴生包。不得把 Web 依赖写入目标项目或技能核心，不得自动安装、联网暴露或把看板
+推导状态冒充审计结论。
 
 生成完成后安装并验证可执行护栏，再运行最终产物审计：
 
