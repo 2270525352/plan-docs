@@ -15,8 +15,10 @@ import sys
 BASE_FILES = (
     "00-source/用户原话.md",
     "00-source/AI推断与事实查证.md",
+    "00-source/项目事实基线.md",
     "01-requirements/开放问题.md",
     "01-requirements/AI可读需求文档.md",
+    "01-requirements/现状与目标差异.md",
     "01-requirements/需求追踪矩阵.md",
     "02-architecture/总体架构.md",
     "02-architecture/接口契约.md",
@@ -51,6 +53,7 @@ TASK_FIELDS = (
     "owner",
     "source_user_words",
     "requirement_ids",
+    "change_refs",
     "input_docs",
     "dependencies",
     "allowed_scope",
@@ -74,6 +77,7 @@ TASK_FIELDS = (
 LIST_TASK_FIELDS = {
     "source_user_words",
     "requirement_ids",
+    "change_refs",
     "input_docs",
     "dependencies",
     "allowed_scope",
@@ -443,6 +447,8 @@ def validate_task(task: dict[str, object], label: str, errors: list[str]) -> Non
         errors.append(f"{label} has no valid U-* or LEGACY-U-* source")
     if not any(re.fullmatch(r"REQ-[A-Za-z0-9-]+", value) for value in task.get("requirement_ids", [])):
         errors.append(f"{label} has no valid REQ-* source")
+    if not any(re.fullmatch(r"GAP-[A-Za-z0-9-]+", value) for value in task.get("change_refs", [])):
+        errors.append(f"{label} has no valid GAP-* source")
     if str(task.get("status")) not in {"ready", "in_progress", "blocked", "review", "done"}:
         errors.append(f"{label} has non-executable status {task.get('status')!r}")
     for interface in task.get("shared_interfaces", []):
@@ -682,6 +688,31 @@ def validate_ready(
 
     environment_path = tree / "05-execution/环境与分工确认.md"
     environment = environment_path.read_text(encoding="utf-8") if environment_path.exists() else ""
+    project_mode = scalar(environment, "project_mode")
+    brownfield_scope = scalar(environment, "brownfield_scope")
+    if project_mode not in {"greenfield", "brownfield"}:
+        errors.append("environment confirmation has no concrete project_mode")
+    if project_mode == "greenfield" and brownfield_scope != "not-applicable":
+        errors.append("greenfield project must use brownfield_scope=not-applicable")
+    if project_mode == "brownfield" and brownfield_scope not in {"incremental", "full"}:
+        errors.append("brownfield project has no concrete incremental/full scope")
+    state_path = tree.parent.parent / "CURRENT_STATE.md"
+    state = state_path.read_text(encoding="utf-8") if state_path.exists() else ""
+    if scalar(state, "plan_docs_schema") != "plan-docs/v2":
+        errors.append("gate-ready project must declare plan_docs_schema: plan-docs/v2")
+    if scalar(state, "project_mode") != project_mode:
+        errors.append("CURRENT_STATE project_mode differs from environment confirmation")
+    if scalar(state, "brownfield_scope") != brownfield_scope:
+        errors.append("CURRENT_STATE brownfield_scope differs from environment confirmation")
+    facts_path = tree / "00-source/项目事实基线.md"
+    facts = facts_path.read_text(encoding="utf-8") if facts_path.exists() else ""
+    changes_path = tree / "01-requirements/现状与目标差异.md"
+    changes = changes_path.read_text(encoding="utf-8") if changes_path.exists() else ""
+    for label, text in (("项目事实基线.md", facts), ("现状与目标差异.md", changes)):
+        if scalar(text, "project_mode") != project_mode:
+            errors.append(f"{label} project_mode differs from environment confirmation")
+        if scalar(text, "brownfield_scope") != brownfield_scope:
+            errors.append(f"{label} brownfield_scope differs from environment confirmation")
     available_ais = list_values(scalar(environment, "available_ais"))
     if not available_ais:
         errors.append("environment confirmation has no available_ais")
@@ -710,11 +741,51 @@ def validate_ready(
         errors.append("environment confirmation has no verified CCB answer")
     if scalar(environment, "codex_app_scheduled_review") not in {"yes", "no"}:
         errors.append("environment confirmation has no scheduled-review decision")
+    scheduled_review = scalar(environment, "codex_app_scheduled_review")
+    scheduled_stop = scalar(environment, "scheduled_review_stop_policy")
+    if scheduled_review == "no" and scheduled_stop != "disabled":
+        errors.append("disabled scheduled review must use scheduled_review_stop_policy=disabled")
+    if scheduled_review == "yes" and scheduled_stop not in {"after-2-green", "user-managed"}:
+        errors.append("enabled scheduled review has no concrete stop policy")
+    if scalar(environment, "review_policy") != "development-ready":
+        errors.append("environment confirmation must use review_policy=development-ready")
+    if scalar(environment, "full_review_round_limit") != "1":
+        errors.append("full_review_round_limit must default to 1")
+    if scalar(environment, "targeted_rereview_round_limit") != "1":
+        errors.append("targeted_rereview_round_limit must default to 1")
+    try:
+        review_call_budget = int(scalar(environment, "review_call_budget"))
+    except ValueError:
+        review_call_budget = 0
+    if review_call_budget < 6:
+        errors.append("review_call_budget must be an integer of at least 6")
     if require_final_artifacts:
         validate_final_artifacts(tree, environment, errors)
 
     summary_path = tree / "06-reviews/审查汇总.md"
     summary = summary_path.read_text(encoding="utf-8") if summary_path.exists() else ""
+    if scalar(summary, "review_policy") != "development-ready":
+        errors.append("review summary must use review_policy=development-ready")
+    try:
+        full_rounds_used = int(scalar(summary, "full_review_rounds_used"))
+        targeted_rounds_used = int(scalar(summary, "targeted_rereview_rounds_used"))
+        review_calls_used = int(scalar(summary, "review_calls_used"))
+        summary_call_budget = int(scalar(summary, "review_call_budget"))
+    except ValueError:
+        full_rounds_used = targeted_rounds_used = review_calls_used = summary_call_budget = -1
+        errors.append("review summary budget fields must be integers")
+    if full_rounds_used != 1:
+        errors.append("gate-ready review must use exactly one full review round")
+    if targeted_rounds_used not in {0, 1}:
+        errors.append("targeted rereview rounds exceed the confirmed default limit")
+    if review_calls_used < 6:
+        errors.append("review summary has fewer than six Reviewer calls")
+    if summary_call_budget != review_call_budget:
+        errors.append("review summary call budget differs from environment confirmation")
+    if review_calls_used > review_call_budget:
+        errors.append("review calls exceed the confirmed budget")
+    if scalar(summary, "review_budget_status") != "within-budget":
+        errors.append("review budget is not within-budget")
     validate_git_checkpoint(
         tree.parent.parent,
         tree,
@@ -897,11 +968,20 @@ def validate_ready(
                             errors.append(f"{finding_id} has invalid status")
                         for field in (
                             "evidence",
+                            "development_impact",
                             "problem",
                             "required_resolution",
                         ):
                             if not raw_field(finding_block, field):
                                 errors.append(f"{finding_id} has empty {field}")
+                        for field in ("blocking_task_ids", "affected_paths"):
+                            if not raw_field(finding_block, field):
+                                errors.append(f"{finding_id} has no {field} declaration")
+                        if (
+                            severity in {"P0", "P1"}
+                            and not list_values(raw_field(finding_block, "blocking_task_ids"))
+                        ):
+                            errors.append(f"{finding_id} {severity} has no blocking TASK-*")
                         summary_finding = summary_finding_rows.get(finding_id)
                         if summary_finding is None:
                             errors.append(f"{reviewer} finding missing from summary: {finding_id}")
@@ -910,6 +990,11 @@ def validate_ready(
                             errors.append(f"{finding_id} severity differs between raw report and summary")
                         if summary_finding.get("status") != status:
                             errors.append(f"{finding_id} status differs between raw report and summary")
+                        if (
+                            "development_impact" not in summary_finding
+                            or not summary_finding.get("development_impact")
+                        ):
+                            errors.append(f"{finding_id} summary has no development impact")
                     for severity in ("P0", "P1", "P2"):
                         if severity not in header:
                             errors.append(f"review summary verdict table has no {severity} column")
@@ -987,6 +1072,66 @@ def validate_ready(
     if len(total_ids) != len(total_tasks):
         errors.append("总任务文档.md contains duplicate task_id values")
     total_by_id = {str(task["task_id"]): task for task in total_tasks}
+    as_is_blocks = id_blocks(facts, "ASIS")
+    as_is_ids = {as_is_id for as_is_id, _ in as_is_blocks}
+    if not as_is_blocks:
+        errors.append("项目事实基线.md contains no ASIS-* block")
+    for as_is_id, block in as_is_blocks:
+        if raw_field(block, "as_is_id") != as_is_id:
+            errors.append(f"{as_is_id} as_is_id does not match heading")
+        for field in (
+            "source_type",
+            "source_paths",
+            "evidence",
+            "observed_behavior",
+            "affected_scope",
+            "confidence",
+            "status",
+        ):
+            if not raw_field(block, field):
+                errors.append(f"{as_is_id} has empty {field}")
+        if raw_field(block, "confidence") not in {"verified", "partial"}:
+            errors.append(f"{as_is_id} has invalid confidence")
+        if raw_field(block, "status") not in {"active", "superseded"}:
+            errors.append(f"{as_is_id} has invalid status")
+    gap_blocks = id_blocks(changes, "GAP")
+    gap_ids = {gap_id for gap_id, _ in gap_blocks}
+    gap_targets: dict[str, set[str]] = {}
+    if not gap_blocks:
+        errors.append("现状与目标差异.md contains no GAP-* block")
+    for gap_id, block in gap_blocks:
+        if raw_field(block, "gap_id") != gap_id:
+            errors.append(f"{gap_id} gap_id does not match heading")
+        as_is_refs = set(list_values(raw_field(block, "as_is_refs")))
+        target_refs = set(list_values(raw_field(block, "target_requirement_refs")))
+        task_refs = set(list_values(raw_field(block, "task_refs")))
+        gap_targets[gap_id] = target_refs
+        if not as_is_refs or not as_is_refs.issubset(as_is_ids):
+            errors.append(f"{gap_id} has missing or unknown ASIS-* refs")
+        if not target_refs:
+            errors.append(f"{gap_id} has no target requirement refs")
+        for field in ("affected_scope", "development_outcome", "acceptance_criteria"):
+            if not raw_field(block, field):
+                errors.append(f"{gap_id} has empty {field}")
+        if raw_field(block, "change_type") not in {
+            "create",
+            "modify",
+            "preserve",
+            "migrate",
+            "remove",
+        }:
+            errors.append(f"{gap_id} has invalid change_type")
+        if raw_field(block, "status") not in {"confirmed", "implemented", "verified"}:
+            errors.append(f"{gap_id} is not confirmed")
+        if not task_refs:
+            errors.append(f"{gap_id} has no task_refs")
+        for task_id in sorted(task_refs - total_ids):
+            errors.append(f"{gap_id} references unknown task {task_id}")
+    for task in total_tasks:
+        task_id = str(task["task_id"])
+        for gap_id in task.get("change_refs") or []:
+            if gap_id not in gap_ids:
+                errors.append(f"{task_id} references unknown change {gap_id}")
     assignment_counts: dict[str, int] = {task_id: 0 for task_id in total_ids}
     for document, tasks_in_document in parsed_by_document.items():
         if document.name == "总任务文档.md":
@@ -1157,6 +1302,11 @@ def validate_ready(
             errors.append(f"{requirement_id} has empty acceptance_criteria")
         if raw_field(block, "status") != "confirmed":
             errors.append(f"{requirement_id} is not confirmed")
+        requirement_changes = set(list_values(raw_field(block, "change_refs")))
+        if not requirement_changes:
+            errors.append(f"{requirement_id} has no GAP-* change_refs")
+        for gap_id in sorted(requirement_changes - gap_ids):
+            errors.append(f"{requirement_id} references unknown change {gap_id}")
         referenced_tasks = set(list_values(raw_field(block, "task_refs")))
         if not referenced_tasks:
             errors.append(f"{requirement_id} has no task_refs")
@@ -1167,6 +1317,9 @@ def validate_ready(
         for requirement_id in task.get("requirement_ids") or []:
             if requirement_id not in requirement_ids:
                 errors.append(f"{task_id} references unknown requirement {requirement_id}")
+    for gap_id, target_refs in gap_targets.items():
+        for requirement_id in sorted(target_refs - requirement_ids):
+            errors.append(f"{gap_id} references unknown requirement {requirement_id}")
 
     tests_path = tree / "03-product/测试用例.md"
     tests_text = tests_path.read_text(encoding="utf-8") if tests_path.exists() else ""
@@ -1176,13 +1329,14 @@ def validate_ready(
     trace_tables = [
         table
         for table in tables(trace_text)
-        if {"requirement", "total_task", "test"}.issubset(table[0])
+        if {"requirement", "change", "total_task", "test"}.issubset(table[0])
     ]
     if not trace_tables:
         errors.append("traceability matrix is missing required columns")
     else:
         header, rows = trace_tables[0]
         req_index = header.index("requirement")
+        change_index = header.index("change")
         user_index = header.index("user_words") if "user_words" in header else -1
         task_index = header.index("total_task")
         test_index = header.index("test")
@@ -1203,12 +1357,19 @@ def validate_ready(
                         )
                 row_tasks = set(re.findall(r"TASK-[A-Za-z0-9-]+", row[task_index]))
                 row_tests = set(re.findall(r"TEST-[A-Za-z0-9-]+", row[test_index]))
-                if row_tasks.intersection(total_ids) and row_tests.intersection(test_ids):
+                row_changes = set(re.findall(r"GAP-[A-Za-z0-9-]+", row[change_index]))
+                for gap_id in sorted(row_changes - gap_ids):
+                    errors.append(f"traceability matrix references unknown change {gap_id}")
+                if (
+                    row_changes.intersection(gap_ids)
+                    and row_tasks.intersection(total_ids)
+                    and row_tests.intersection(test_ids)
+                ):
                     has_known_trace = True
                     break
             if not has_known_trace:
                 errors.append(
-                    f"{requirement_id} has no trace to a known TASK-* and TEST-*"
+                    f"{requirement_id} has no trace through known GAP-*, TASK-* and TEST-*"
                 )
 
 

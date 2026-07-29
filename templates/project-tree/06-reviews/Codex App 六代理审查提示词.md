@@ -1,6 +1,7 @@
 # Codex App 六代理审查提示词
 
-把以下提示词交给 Codex App。优先并行启动六个独立代理；若不支持，则按 reviewer_id 用六次新上下文串行执行。各代理不得看到其他代理结论。
+把以下提示词交给 Codex App。仅在确定性审计通过、规划已稳定且预算允许时启动一次完整审查。
+优先并行启动六个独立代理；若不支持，则按 reviewer_id 用六次新上下文串行执行。各代理不得看到其他代理结论。
 
 ```text
 你是本项目的文档审查协调者。不要实现代码，不要修改用户原话，不要让审查代理静默修复文档。
@@ -26,6 +27,9 @@ A3：检查架构、接口、数据流、产品模块树、按钮级交互、数
 A4：检查总任务、依赖拓扑、原子粒度、并行安全、写锁、共享接口、输入输出格式和文件冲突。
 A5：检查 Claude、Codex、Reviewer（Claude）、OpenCode 的职责、禁止范围和 Reviewer 独立性。
 A6：检查测试、Git checkpoint、执行反馈、CURRENT_STATE、自动化、护栏和停止条件。
+
+审查目标是判断文档能否安全驱动开发。措辞、格式或不影响开发/验收的建议只能标 P2。
+每个 finding 必须指出具体 development_impact、blocking_task_ids 和 affected_paths。
 
 每个代理只提交报告，保存为 `docs/plan-docs/06-reviews/agents/<review_round>-<reviewer_id>.md`。必须按 A1→A6 串行执行以下状态机：
 
@@ -61,6 +65,9 @@ finding_id: REV-<reviewer_id>-001
 severity: P0 / P1 / P2
 evidence: <非空单行证据>
 affected_ids: []
+development_impact: <对开发、验收、安全或兼容性的具体影响；没有则标为 P2>
+blocking_task_ids: []
+affected_paths: []
 problem: <非空单行问题>
 required_resolution: <非空单行关闭条件>
 status: OPEN / RESOLVED
@@ -68,15 +75,20 @@ status: OPEN / RESOLVED
 coverage_checked: <非空单行覆盖证据>
 unverified_items: none / <非空单行未核验项>
 
-汇总六份报告到 docs/plan-docs/06-reviews/审查汇总.md，并在 `report_ref` 填入各原始报告相对路径。不要直接修复；先把每个 finding 分配给规划 owner。修订完成后，对受影响范围重新运行独立审查。
+汇总六份报告到 docs/plan-docs/06-reviews/审查汇总.md，并在 `report_ref` 填入各原始报告相对路径。
+不要直接修复；先把每个 finding 分配给规划 owner。P2 写入非阻塞待办。修订完成后只对受影响
+范围进行最多一轮定向复审，不自动再次执行完整六代理审查。
 
 只有同时满足以下条件才把自动模式门禁标记 READY：
 - 没有 RED；
 - 没有未处理的 P0/P1 YELLOW；
+- P2 已进入非阻塞待办；
+- 完整审查、定向复审和 Reviewer 调用未超过环境确认中的预算；
 - 所有需求都有任务和验收标准；
 - 所有任务都有 owner、allowed/forbidden scope、验证/测试、write_lock、feedback 和 stop conditions；
 - 不存在文件或接口写入冲突；
 - 用户已确认环境、分工、Git 策略、最终规划和最终合并权威。
 
-否则门禁保持 BLOCKED，并明确阻塞证据。不得生成最终执行提示词。
+否则门禁保持 BLOCKED，并明确阻塞证据。达到预算时停止，不得自动追加审查轮次；只有取得新的
+用户原话授权后才能提高预算。不得生成最终执行提示词。
 ```

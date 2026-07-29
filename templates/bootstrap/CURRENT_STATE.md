@@ -7,13 +7,23 @@ Read this file after `AGENTS.md` before planning, writing, reviewing or executin
 
 ## Current snapshot
 
-plan_docs_schema: plan-docs/v1
+plan_docs_schema: plan-docs/v2
+
+project_mode: greenfield / brownfield
+
+brownfield_scope: not-applicable / incremental / full
 
 current_phase: intake / requirements / product / architecture / tasks / review / ready / executing / blocked
 
 current_task:
 
 current_owner:
+
+task_started_at:
+
+last_progress_at:
+
+last_progress_kind: code / test / checkpoint / blocker / planning
 
 coordinator:
 

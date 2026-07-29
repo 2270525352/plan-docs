@@ -8,8 +8,12 @@
 python3 <PLAN_DOCS_SKILL_DIR>/scripts/plan-docs-activate-task.py --project <PROJECT_ROOT> --task-doc <PROJECT_ROOT>/docs/plan-docs/04-tasks/<CANONICAL_AI_TASK_DOC> --task-id <TASK_ID>
 确认 current-task.json 与所选合同完全一致；同一 worktree 同时只能激活一个任务，完成或阻塞当前任务后才能激活下一个。
 按任务全部稳定字段执行，取得写锁，运行 git status，只改 allowed_scope。
-完成 exact_steps 后运行 verify/test，追加反馈，对照 U/REQ/API 检查 diff，按 Git 策略 checkpoint，更新 CURRENT_STATE。
+开始任务时记录 task_started_at、last_progress_at 和 last_progress_kind。完成 exact_steps 后运行
+verify/test，追加包含实际文件和测试证据的反馈，对照 U/REQ/GAP/API 检查 diff，按 Git 策略
+checkpoint，更新 CURRENT_STATE。
 然后再领取下一个任务。
 需要 Reviewer 时开启新的干净上下文；无法隔离时停止自动执行并记录降级。
 任何 RED、锁冲突、需求/架构缺口或 stop_conditions 都必须停止，不得猜测。
+允许长时间实际开发，但必须持续形成代码、测试、checkpoint 或 blocker；不得用重复润色文档
+或处理 P2 冒充执行进展。
 ```

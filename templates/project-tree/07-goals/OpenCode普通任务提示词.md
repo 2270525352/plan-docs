@@ -8,6 +8,7 @@ owner: OpenCode
 协调者：<COORDINATOR>
 来源原话：<U-*>
 来源需求：<REQ-*>
+来源差异：<GAP-*>
 输入文档：<paths>
 依赖：<TASK-* / commits>
 允许修改：<exact paths>
@@ -30,5 +31,6 @@ Git checkpoint：<policy>
 任何写入前先运行：
 python3 <PLAN_DOCS_SKILL_DIR>/scripts/plan-docs-activate-task.py --project <PROJECT_ROOT> --task-doc <PROJECT_ROOT>/docs/plan-docs/04-tasks/OpenCode任务文档.md --task-id <TASK_ID>
 确认 current-task.json 与本任务合同完全一致；同一 worktree 同时只能激活一个任务。
-不要改变需求、产品、架构或接口。完成后返回实际文件、命令结果、假设、阻塞和建议合并顺序。
+不要改变需求、产品、架构或接口。完成后返回实际文件、diff 摘要、测试证据、checkpoint、
+假设、阻塞和建议合并顺序。
 ```

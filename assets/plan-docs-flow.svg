@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 440" role="img" aria-labelledby="title desc">
-  <title id="title">从原始想法到精确执行的 Plan Docs 工作流程</title>
-  <desc id="desc">原始想法依次经过需求对齐、项目规划和独立审查，最终成为可以精确执行的任务。</desc>
+  <title id="title">从项目事实和目标到代码证据的 Plan Docs 工作流程</title>
+  <desc id="desc">新项目意图或老项目现状经过目标差异、任务合同和开发就绪审查，最终落实为代码、测试和提交。</desc>
 
   <style>
     :root {
@@ -151,8 +151,8 @@
 
   <rect class="背景" width="1200" height="440" rx="18"/>
 
-  <text class="标题" x="72" y="72">先想清楚，再开始做</text>
-  <text class="说明" x="72" y="108">每一步都有来源、负责人、验收标准和可检查的证据</text>
+  <text class="标题" x="72" y="72">文档为开发服务，证据让项目推进</text>
+  <text class="说明" x="72" y="108">新项目从意图出发，老项目从现状出发，最终都落实到代码与测试</text>
 
   <path class="静态轨道" d="M 120 220 H 1080"/>
   <path class="动态轨道" d="M 120 220 H 1080"/>
@@ -160,38 +160,38 @@
   <g>
     <circle class="节点外圈" cx="120" cy="220" r="25"/>
     <circle class="节点核心 阶段一" cx="120" cy="220" r="12"/>
-    <text class="步骤" x="120" y="282">原始想法</text>
-    <text class="证据" x="120" y="312">原话锚点</text>
+    <text class="步骤" x="120" y="282">项目入口</text>
+    <text class="证据" x="120" y="312">新建 / 现有</text>
   </g>
 
   <g>
     <circle class="节点外圈" cx="360" cy="220" r="25"/>
     <circle class="节点核心 阶段二" cx="360" cy="220" r="12"/>
-    <text class="步骤" x="360" y="282">需求对齐</text>
-    <text class="证据" x="360" y="312">需求基线</text>
+    <text class="步骤" x="360" y="282">现状与目标</text>
+    <text class="证据" x="360" y="312">AS-IS / TO-BE</text>
   </g>
 
   <g>
     <circle class="节点外圈" cx="600" cy="220" r="25"/>
     <circle class="节点核心 阶段三" cx="600" cy="220" r="12"/>
-    <text class="步骤" x="600" y="282">项目规划</text>
-    <text class="证据" x="600" y="312">任务合同</text>
+    <text class="步骤" x="600" y="282">差异与任务</text>
+    <text class="证据" x="600" y="312">GAP / TASK</text>
   </g>
 
   <g>
     <circle class="节点外圈" cx="840" cy="220" r="25"/>
     <circle class="节点核心 阶段四" cx="840" cy="220" r="12"/>
-    <text class="步骤" x="840" y="282">独立审查</text>
-    <text class="证据" x="840" y="312">门禁证据</text>
+    <text class="步骤" x="840" y="282">开发就绪</text>
+    <text class="证据" x="840" y="312">有预算审查</text>
   </g>
 
   <g>
     <circle class="节点外圈" cx="1080" cy="220" r="29"/>
     <circle class="节点核心 阶段五" cx="1080" cy="220" r="16"/>
     <path class="完成标记" d="M 1071 220 L 1078 227 L 1091 212"/>
-    <text class="步骤" x="1080" y="282">精确执行</text>
-    <text class="证据" x="1080" y="312">代码提交</text>
+    <text class="步骤" x="1080" y="282">实际开发</text>
+    <text class="证据" x="1080" y="312">代码 / 测试 / 提交</text>
   </g>
 
-  <text class="说明" x="72" y="390">需求没有确认，执行就不会提前开始。</text>
+  <text class="说明" x="72" y="390">允许开发长跑；没有代码、测试、提交或阻塞证据，就不算项目进展。</text>
 </svg>

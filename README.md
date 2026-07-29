@@ -1,6 +1,6 @@
 # plan-docs
 
-`plan-docs` 是一个项目规划技能：先把模糊想法讨论清楚，再生成可追踪、可审查、可分工、可直接执行的文档树。
+`plan-docs` 把新项目想法或老项目现状与目标之间的差异，变成可追踪、可审查、可分工并能直接驱动开发的文档树。
 
 ![从原始想法到精确执行的项目规划流程](assets/plan-docs-flow.svg)
 
@@ -13,7 +13,9 @@
 - 生成产品、交互、架构、接口、数据、测试和任务文档树；
 - 为 Claude、Codex、CCB、OpenCode 或单 AI CLI 分配可验证的任务；
 - 在执行前完成独立审查，并用 Git 检查点和护栏防止偏离；
-- 支持新项目规划，也支持老项目的非破坏性逆向初始化。
+- 新项目从需求访谈正向规划；老项目默认只逆向本次变更影响链，也可选择全量接管；
+- 建立 `AS-IS → TO-BE → GAP → TASK → 代码/测试/commit` 闭环；
+- 完整六代理审查默认只做一次，P2 不阻塞开发，超出复审预算会暂停而不是无限循环。
 
 ## 快速开始
 
@@ -44,8 +46,8 @@ git clone https://github.com/2270525352/plan-docs.git ~/.codex/skills/plan-docs
 AGENTS.md
 CURRENT_STATE.md
 docs/plan-docs/
-  00-source/         用户原话与事实
-  01-requirements/   需求与追踪
+  00-source/         用户原话与 AS-IS 事实
+  01-requirements/   TO-BE 需求、GAP 与追踪
   02-architecture/   架构与接口
   03-product/        产品、交互、数据与测试
   04-tasks/          总任务与各 AI 任务
@@ -57,7 +59,7 @@ docs/plan-docs/
   10-guards/         防偏离护栏
 ```
 
-需求、任务、测试、审查和 Git 提交通过稳定编号互相引用，形成完整追踪链。
+项目事实、需求差异、任务、测试、审查和 Git 提交通过稳定编号互相引用，形成完整开发追踪链。
 
 ## 手动初始化
 
@@ -71,7 +73,7 @@ python3 <技能目录>/scripts/plan-docs-bootstrap.py install --project <项目�
 
 ## 可选网页项目看板
 
-需要直观看到当前阶段、阻塞项和下一步时，可以单独运行：
+需要直观看到当前开发任务、实际改动、测试、提交、阻塞和审查预算时，可以单独运行：
 
 ```bash
 npx plan-docs-dashboard --project <项目目录>
@@ -89,7 +91,7 @@ npx plan-docs-dashboard --project <项目目录>
 - [多 AI 分工与执行](references/03-多AI分工与执行.md)
 - [独立审查](references/04-六代理审查.md)
 - [Git、自动化与护栏](references/05-提示词自动化与Git.md)
-- [老项目兼容迁移](references/06-老项目与兼容迁移.md)
+- [老项目事实恢复与增量/全量迁移](references/06-老项目与兼容迁移.md)
 
 ## 开发验证
 

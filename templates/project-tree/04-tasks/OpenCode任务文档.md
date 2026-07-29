@@ -25,6 +25,7 @@ phase:
 owner: OpenCode
 source_user_words: []
 requirement_ids: []
+change_refs: []
 input_docs: []
 dependencies: []
 allowed_scope: []

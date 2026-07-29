@@ -20,13 +20,15 @@ Every AI must read:
 1. `AGENTS.md`
 2. `CURRENT_STATE.md`
 3. `docs/plan-docs/00-source/用户原话.md`
-4. `docs/plan-docs/01-requirements/AI可读需求文档.md`
-5. `docs/plan-docs/03-product/产品及交互索引.md`
-6. `docs/plan-docs/02-architecture/总体架构.md`
-7. `docs/plan-docs/02-architecture/接口契约.md`
-8. `docs/plan-docs/04-tasks/总任务文档.md`
-9. the task document for the active AI
-10. `docs/plan-docs/05-execution/执行反馈日志.md`
+4. `docs/plan-docs/00-source/项目事实基线.md`
+5. `docs/plan-docs/01-requirements/AI可读需求文档.md`
+6. `docs/plan-docs/01-requirements/现状与目标差异.md`
+7. `docs/plan-docs/03-product/产品及交互索引.md`
+8. `docs/plan-docs/02-architecture/总体架构.md`
+9. `docs/plan-docs/02-architecture/接口契约.md`
+10. `docs/plan-docs/04-tasks/总任务文档.md`
+11. the task document for the active AI
+12. `docs/plan-docs/05-execution/执行反馈日志.md`
 
 Skip a file only when it does not exist in the current planning phase.
 
@@ -35,6 +37,8 @@ Skip a file only when it does not exist in the current planning phase.
 - `00-source/用户原话.md` is append-only and contains only verbatim user words plus record metadata.
 - Never rewrite, summarize, polish, translate, delete, or reorder user words.
 - Put AI inference, research and interpretation in `00-source/AI推断与事实查证.md`.
+- Keep code-proven AS-IS facts in `00-source/项目事实基线.md`; do not treat current code as desired behavior.
+- Every executable task must trace through a confirmed `GAP-*` from AS-IS to a target requirement.
 - Every requirement, product node, architecture decision, task, test, review and commit must trace to stable IDs.
 - Resolve requirements, task ownership and reviews before implementation.
 - Do not invent product behavior, interface changes, prompts or architecture during execution.
@@ -56,7 +60,8 @@ Skip a file only when it does not exist in the current planning phase.
 - Respect `allowed_scope`, `forbidden_scope`, `write_lock`, `shared_interfaces`, `input_contracts`, `output_contracts`, `merge_order`, `conflict_resolution` and `stop_conditions`.
 - Run every declared verification and test command.
 - Append a structured feedback record after every task or self-check; no feedback means not complete.
-- Update `CURRENT_STATE.md` on task start, lock change, completion, blocker, review and checkpoint.
+- Update `CURRENT_STATE.md` on task start, effective progress, lock change, completion, blocker, review and checkpoint.
+- Long-running development is allowed only while it produces code, test, checkpoint or blocker evidence; repeated document polish is not execution progress.
 
 ### Git
 

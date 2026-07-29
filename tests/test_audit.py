@@ -39,6 +39,19 @@ class AuditTests(unittest.TestCase):
                 text=True,
             )
             tree = project / "docs/plan-docs"
+            state_path = project / "CURRENT_STATE.md"
+            state_path.write_text(
+                state_path.read_text(encoding="utf-8")
+                .replace(
+                    "project_mode: greenfield / brownfield",
+                    "project_mode: greenfield",
+                )
+                .replace(
+                    "brownfield_scope: not-applicable / incremental / full",
+                    "brownfield_scope: not-applicable",
+                ),
+                encoding="utf-8",
+            )
             (tree / "00-source/用户原话.md").write_text(
                 """# 用户原话
 
@@ -78,6 +91,7 @@ phase: implementation
 owner: Codex
 source_user_words: [U-001]
 requirement_ids: [REQ-001]
+change_refs: [GAP-001]
 input_docs: [docs/plan-docs/01-requirements/AI可读需求文档.md]
 dependencies: []
 allowed_scope: [src/feature.py]
@@ -147,6 +161,51 @@ status: frozen
 
 requirement_id: REQ-001
 source_user_words: [U-001]
+project_mode: greenfield
+basis: user-confirmed
+as_is_refs: [ASIS-001]
+change_refs: [GAP-001]
+acceptance_criteria: TEST-001 passes
+task_refs: [TASK-001]
+status: confirmed
+""",
+                encoding="utf-8",
+            )
+            (tree / "00-source/项目事实基线.md").write_text(
+                """# 项目事实基线
+
+project_mode: greenfield
+brownfield_scope: not-applicable
+scope_boundary: confirmed feature
+evidence_cutoff: 2026-07-25
+
+## ASIS-001
+
+as_is_id: ASIS-001
+source_type: not-implemented
+source_paths: [docs/plan-docs/00-source/用户原话.md]
+evidence: no implementation exists for the confirmed feature
+observed_behavior: feature is not implemented
+affected_scope: src/feature.py
+confidence: verified
+status: active
+""",
+                encoding="utf-8",
+            )
+            (tree / "01-requirements/现状与目标差异.md").write_text(
+                """# 现状与目标差异
+
+project_mode: greenfield
+brownfield_scope: not-applicable
+
+## GAP-001
+
+gap_id: GAP-001
+as_is_refs: [ASIS-001]
+target_requirement_refs: [REQ-001]
+change_type: create
+affected_scope: src/feature.py
+development_outcome: confirmed feature is implemented
 acceptance_criteria: TEST-001 passes
 task_refs: [TASK-001]
 status: confirmed
@@ -156,9 +215,9 @@ status: confirmed
             (tree / "01-requirements/需求追踪矩阵.md").write_text(
                 """# 需求追踪矩阵
 
-| user_words | requirement | total_task | test |
-|---|---|---|---|
-| U-001 | REQ-001 | TASK-001 | TEST-001 |
+| user_words | as_is | requirement | change | total_task | test |
+|---|---|---|---|---|---|
+| U-001 | ASIS-001 | REQ-001 | GAP-001 | TASK-001 | TEST-001 |
 """,
                 encoding="utf-8",
             )
@@ -169,6 +228,9 @@ status: confirmed
             (tree / "05-execution/环境与分工确认.md").write_text(
                 """# 环境与分工确认
 
+project_mode: greenfield
+brownfield_scope: not-applicable
+scope_boundary: confirmed feature
 ccb_installed: no
 available_ais: [Codex]
 claude_prompt_mode: not-selected
@@ -182,6 +244,11 @@ reviewer: independent Codex App agents
 parallel_allowed: no
 git_policy: confirm
 codex_app_scheduled_review: no
+scheduled_review_stop_policy: disabled
+review_policy: development-ready
+full_review_round_limit: 1
+targeted_rereview_round_limit: 1
+review_call_budget: 12
 confirmed_by_user: yes
 confirmation_source_user_words: U-001
 confirmation_quote: Build the confirmed feature with command `run <daily|weekly>` without inventing behavior.
@@ -266,6 +333,13 @@ review_round: 1
 reviewed_checkpoint: """
                 + checkpoint
                 + """
+
+review_policy: development-ready
+full_review_rounds_used: 1
+targeted_rereview_rounds_used: 0
+review_calls_used: 6
+review_call_budget: 12
+review_budget_status: within-budget
 
 | reviewer_id | context_isolation | verdict | P0 | P1 | P2 | report_ref |
 |---|---|---|---|---|---|---|

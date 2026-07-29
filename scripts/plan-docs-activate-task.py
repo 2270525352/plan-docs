@@ -19,6 +19,7 @@ FIELDS = (
     "owner",
     "source_user_words",
     "requirement_ids",
+    "change_refs",
     "input_docs",
     "dependencies",
     "allowed_scope",
@@ -42,6 +43,7 @@ FIELDS = (
 LIST_FIELDS = {
     "source_user_words",
     "requirement_ids",
+    "change_refs",
     "input_docs",
     "dependencies",
     "allowed_scope",
@@ -61,6 +63,7 @@ REQUIRED_NONEMPTY = {
     "owner",
     "source_user_words",
     "requirement_ids",
+    "change_refs",
     "input_docs",
     "allowed_scope",
     "forbidden_scope",

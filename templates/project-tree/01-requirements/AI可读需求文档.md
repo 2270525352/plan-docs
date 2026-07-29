@@ -8,6 +8,14 @@ requirement_id: REQ-001
 
 source_user_words: [U-001]
 
+project_mode: greenfield / brownfield
+
+basis: user-confirmed / code-proven / mixed
+
+as_is_refs: [ASIS-001]
+
+change_refs: [GAP-001]
+
 intent:
 
 actors:

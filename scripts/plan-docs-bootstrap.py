@@ -234,9 +234,15 @@ def verify(project: Path, require_tree: bool) -> int:
             if state_marker_state(state_text) != "valid":
                 errors.append("invalid PLAN_DOCS_STATE block")
             for field in (
+                "plan_docs_schema:",
+                "project_mode:",
+                "brownfield_scope:",
                 "current_phase:",
                 "current_task:",
                 "current_owner:",
+                "task_started_at:",
+                "last_progress_at:",
+                "last_progress_kind:",
                 "locked_files:",
                 "completed_work:",
                 "latest_commit:",

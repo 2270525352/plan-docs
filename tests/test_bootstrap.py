@@ -53,7 +53,7 @@ class BootstrapTests(unittest.TestCase):
                 (project / "docs/plan-docs/04-tasks/OpenCode任务文档.md").exists()
             )
             self.assertIn(
-                "plan_docs_schema: plan-docs/v1",
+                "plan_docs_schema: plan-docs/v2",
                 (project / "CURRENT_STATE.md").read_text(encoding="utf-8"),
             )
             self.assertIn(
@@ -62,6 +62,18 @@ class BootstrapTests(unittest.TestCase):
                     project
                     / "docs/plan-docs/05-execution/环境与分工确认.md"
                 ).read_text(encoding="utf-8"),
+            )
+            self.assertTrue(
+                (
+                    project
+                    / "docs/plan-docs/00-source/项目事实基线.md"
+                ).is_file()
+            )
+            self.assertTrue(
+                (
+                    project
+                    / "docs/plan-docs/01-requirements/现状与目标差异.md"
+                ).is_file()
             )
             self.assertFalse((project / "package.json").exists())
             self.assertFalse((project / "node_modules").exists())

@@ -16,16 +16,18 @@ Web 看板只帮助用户理解“项目在哪一步、为什么停在这里、�
 4. 用户选择长期安装时，展示准确命令并再次确认；不得静默全局安装。
 5. 看板发布版本与 `plan_docs_schema` 不兼容时停止，不猜测迁移。
 
-## v1 读取协议
+## v2 读取协议
 
-`plan_docs_schema: plan-docs/v1` 写在根 `CURRENT_STATE.md` 的 `Current snapshot`。缺失该字段
-时，看板可按兼容模式读取，但必须显示“未声明 schema”。
+`plan_docs_schema: plan-docs/v2` 写在根 `CURRENT_STATE.md` 的 `Current snapshot`。看板应兼容
+读取 v1，但必须显示“旧版 schema”；缺失时显示“未声明 schema”，不能猜测升级。
 
 只读取这些项目内固定路径：
 
 - `CURRENT_STATE.md`
 - `docs/plan-docs/00-source/用户原话.md`
+- `docs/plan-docs/00-source/项目事实基线.md`
 - `docs/plan-docs/01-requirements/AI可读需求文档.md`
+- `docs/plan-docs/01-requirements/现状与目标差异.md`
 - `docs/plan-docs/01-requirements/开放问题.md`
 - `docs/plan-docs/03-product/产品及交互索引.md`
 - `docs/plan-docs/03-product/测试用例.md`
@@ -43,14 +45,18 @@ Web 看板只帮助用户理解“项目在哪一步、为什么停在这里、�
 
 首屏在五秒内回答：
 
+- 这是新项目、老项目增量改造还是老项目全量接管；
 - 当前阶段和总体状态；
 - 当前任务、负责人和持续时间；
+- 最近一次有效进展是代码、测试、checkpoint 还是 blocker；
 - 阻塞项目；
 - 下一步；
-- 需求、任务、测试、审查和门禁覆盖情况。
+- 实际改动文件、测试证据、最新 commit；
+- Reviewer 调用量、预算和是否触顶；
+- 需求、GAP、任务、测试、审查和门禁覆盖情况。
 
-深入页展示原话到需求、产品、任务、测试、审查和 commit 的项目地图，以及只追加的事实时间线。
-不使用无法解释的总进度百分比。
+深入页展示 `用户原话/AS-IS → REQ → GAP → TASK → 代码 → TEST → review → commit` 的项目
+地图，以及只追加的事实时间线。不使用无法解释的总进度百分比，也不把文档数量当开发进度。
 
 ## 安全边界
 

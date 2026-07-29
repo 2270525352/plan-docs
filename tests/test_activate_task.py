@@ -23,6 +23,7 @@ phase: intake
 owner: Codex
 source_user_words: [U-001]
 requirement_ids: [REQ-001]
+change_refs: [GAP-001]
 input_docs: [docs/plan-docs/01-requirements/AI可读需求文档.md]
 dependencies: []
 allowed_scope:
